@@ -1,0 +1,1265 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Fable 5 · Claude Max
+ ▝▝   ▝▝   ~/p/liquidx-leman-android
+
+
+❯ /clear                                                                        
+
+❯ Look through the settings page and figure out why the agent name text box is  
+  mishbehaving, the cursor position keeps on resetting and going one or two     
+  characters off as i am typing.                                                
+
+⏺ I'll investigate the cursor-jumping issue in the agent name text field. Using
+  superpowers:systematic-debugging to approach this properly.
+
+⏺ Skill(superpowers:systematic-debugging)
+  ⎿  Successfully loaded skill
+
+  Searched for 3 patterns, read 4 files, ran 1 shell command (ctrl+o to expand)
+
+⏺ Root cause found. Here's the full picture.
+
+  Why the cursor jumps
+
+  The agent name box is a plain string-based BasicTextField (Inputs.kt:108)
+  whose value round-trips through the ViewModel asynchronously, and Compose's
+  value/onValueChange text field contract requires that round trip to be
+  synchronous. The path per keystroke is:
+
+  1. You type a character. The text field's internal buffer (its EditProcessor)
+     shows it immediately and advances the cursor.
+  2. onValueChange fires ConfigEvent.SetAgentName, which sets the agentNameInput
+     MutableStateFlow (ConfigViewModel.kt:140) and also launches a DataStore
+     write.
+  3. The value the field actually renders comes back via combine(...six 
+     flows...).stateIn(viewModelScope, ...) (ConfigViewModel.kt:84-115),
+     collected with collectAsStateWithLifecycle in LemanNavHost.kt:180.
+
+  That step 3 is the bug. A MutableStateFlow write does not propagate
+  synchronously through combine/stateIn — it needs at least one coroutine
+  dispatch, and then a recomposition frame. If you type quickly, the field's
+  internal buffer is already at "abcde" while the value arriving from the state
+  flow is still "abc". The string-overload BasicTextField treats the external
+  value as truth, resets its buffer to the stale string, and re-derives the
+  selection — which is exactly the "cursor resets and lands one or two
+  characters off" you're seeing. This is a documented failure mode of the value:
+  String TextField API: the new value must be reflected back in the same
+  composition pass, and any Flow/ViewModel hop breaks that under fast typing.
+
+  Two aggravating details:
+
+  - The uncommitted fix in the working tree helped but can't fully work. The
+    agentNameInput echo (the diff comment "Echo synchronously so the text field
+    never sees a stale round-trip through DataStore") removed the DataStore
+    round trip from the loop, shrinking the lag from "disk write + read" to "one
+    dispatch + one frame" — so it misbehaves less often now, but the loop is
+    still async, so fast typing still races it.
+  - Every keystroke also writes to DataStore (update { it.copy(agentName = 
+    event.name) }), so the settings flow re-emits per character too, doubling
+    combine emissions (and doing a disk write per char). Since agentNameInput
+    stays non-null and wins in the combine, this no longer resets the text —
+    it's just churn.
+
+  The server-url and api-key fields have the identical architecture, so they
+  carry the same latent bug — it's probably just less visible because those are
+  usually pasted rather than typed.
+
+  How to actually fix it
+
+  The field's live text needs a source of truth that updates synchronously with
+  typing. Two clean options:
+
+  1. Snapshot state in the ViewModel — hold the input as var agentNameInput by 
+     mutableStateOf(...) (Compose snapshot state, not a StateFlow), update it
+     directly in onEvent, and have the screen read it directly. Recomposition
+     then sees the new value in the same frame, no coroutine hop. Persist to
+     DataStore on the side (ideally debounced or on focus-loss/submit rather
+     than per keystroke).
+  2. Migrate PromptField to the newer BasicTextField(state = TextFieldState) API
+     — the field owns its buffer, so the async-feedback problem disappears by
+     construction, and the ViewModel just observes changes. This is the
+     direction Google recommends and would fix all three fields at once.
+
+  I recommend option 2 for a durable fix (it also drops the per-keystroke
+  DataStore write naturally, saving on submit/change instead). Since you asked
+  for the diagnosis, I've stopped here — say the word and I'll implement it.
+
+✻ Churned for 2m 13s · done Thursday, Jul 16 at 11:00 AM
+
+❯ 2                                                                             
+
+⏺ Implementing option 2 — migrating PromptField to the TextFieldState API. Using
+  superpowers:test-driven-development for the bugfix implementation.
+
+⏺ Skill(superpowers:test-driven-development)
+  ⎿  Successfully loaded skill
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+⏺ Compose BOM 2025.12.00 — the TextFieldState API is stable there. Now let me
+  check how the other PromptField callers hold their state, to decide the
+  migration scope.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Now let me look at the existing tests (ViewModel test and any screenshot tests
+  touching config) since they'll drive the design.
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+❯ Let's also make sure all our text fields are using the best practice if they  
+  are in the similar situation                                                  
+
+  Searched for 6 patterns, read 6 files (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/testutil/TextInput.kt)
+  ⎿  Wrote 15 lines to
+     app/src/test/java/net/liquidx/leman/testutil/TextInput.kt
+       1 package net.liquidx.leman.testutil
+       3 import androidx.compose.foundation.text.input.TextFieldState
+       4 import androidx.compose.foundation.text.input.setTextAndPlaceCur
+         sorAtEnd
+       6 
+       7 /**
+         ition nothing
+       9  * flushes snapshot writes, so `snapshotFlow` observers (e.g. th
+         e ViewModel
+         dApplyNotifications].
+     … +9 lines (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/ui/config/ConfigViewModelTest.kt)
+  ⎿  Added 1 line
+       9  import net.liquidx.leman.domain.model.RunEvent
+      10  import net.liquidx.leman.testutil.MainDispatcherRule
+      11  import net.liquidx.leman.testutil.VmHarness
+      12 +import net.liquidx.leman.testutil.type                         
+      13  import net.liquidx.leman.ui.threads.awaitUntil
+      14  import org.junit.Assert.assertEquals
+      15  import org.junit.Assert.assertFalse
+
+⏺ Update(app/src/test/java/net/liquidx/leman/ui/config/ConfigViewModelTest.kt)
+  ⎿  Added 24 lines, removed 4 lines
+      43          vm.state.test {
+      44              awaitUntil { it.loaded }
+      45  
+      46 -            vm.onEvent(ConfigEvent.SetServerUrlInput("not a url
+         -"))                                                            
+      46 +            vm.serverUrlState.type("not a url")                
+      47              vm.onEvent(ConfigEvent.SaveServerUrl)
+      48              assertNotNull(awaitUntil { it.urlError != null }.ur
+          lError)
+      49  
+      50 -            vm.onEvent(ConfigEvent.SetServerUrlInput("http://in
+         -secure.example"))                                              
+      50 +            vm.serverUrlState.type("http://insecure.example")  
+      51              vm.onEvent(ConfigEvent.SaveServerUrl)
+      52              assertNotNull(awaitUntil { it.urlError != null }.ur
+          lError) // http rejected in release
+      53  
+      54 -            vm.onEvent(ConfigEvent.SetServerUrlInput("https://g
+         -w.example/"))                                                  
+      54 +            vm.serverUrlState.type("https://gw.example/")      
+      55              vm.onEvent(ConfigEvent.SaveServerUrl)
+      56              val saved = awaitUntil { it.settings.serverUrl == "
+          https://gw.example" }
+      57              assertNull(saved.urlError)
+      58 +            // the field reflects the normalized origin after s
+         +ave                                                            
+      59 +            advanceUntilIdle()                                 
+      60 +            assertEquals("https://gw.example", vm.serverUrlStat
+         +e.text.toString())                                             
+      61              cancelAndIgnoreRemainingEvents()
+      62          }
+      63          h.close()
+      64      }
+      65  
+      66      @Test
+      67 +    fun saveServerUrl_typingClearsValidationError() = runTest {
+      68 +        val h = VmHarness(this)                                
+      69 +        val vm = vm(h)                                         
+      70 +        vm.state.test {                                        
+      71 +            awaitUntil { it.loaded }                           
+      72 +            vm.serverUrlState.type("not a url")                
+      73 +            vm.onEvent(ConfigEvent.SaveServerUrl)              
+      74 +            assertNotNull(awaitUntil { it.urlError != null }.ur
+         +lError)                                                        
+      75 +                                                               
+      76 +            vm.serverUrlState.type("not a url, but edited")    
+      77 +            assertNull(awaitUntil { it.urlError == null }.urlEr
+         +ror)                                                           
+      78 +            cancelAndIgnoreRemainingEvents()                   
+      79 +        }                                                      
+      80 +        h.close()                                              
+      81 +    }                                                          
+      82 +                                                               
+      83 +    @Test                                                      
+      84      fun saveServerUrl_allowsHttpInDebug() = runTest {
+      85          val h = VmHarness(this)
+      86          val vm = vm(h, allowHttp = true)
+      87          vm.state.test {
+      88              awaitUntil { it.loaded }
+      69 -            vm.onEvent(ConfigEvent.SetServerUrlInput("http://10
+         -.0.2.2:8080"))                                                 
+      89 +            vm.serverUrlState.type("http://10.0.2.2:8080")     
+      90              vm.onEvent(ConfigEvent.SaveServerUrl)
+      91              awaitUntil { it.settings.serverUrl == "http://10.0.
+          2.2:8080" }
+      92              cancelAndIgnoreRemainingEvents()
+
+⏺ Update(app/src/test/java/net/liquidx/leman/ui/config/ConfigViewModelTest.kt)
+  ⎿  Added 24 lines, removed 6 lines
+      142      }
+      143  
+      144      @Test
+      145 -    fun setAgentName_echoesInputWithoutWaitingForPersistence()
+          - = runTest {                                                  
+      145 +    fun agentName_seedsFieldFromStoredSettingsOnce() = runTest
+          + {                                                            
+      146          val h = VmHarness(this)
+      147 +        h.settingsStore.update { it.copy(agentName = "zephyr")
+          + }                                                            
+      148 +        advanceUntilIdle()                                    
+      149          val vm = vm(h)
+      150          vm.state.test {
+      151              awaitUntil { it.loaded }
+      150 -            vm.onEvent(ConfigEvent.SetAgentName("jun"))       
+      151 -            vm.onEvent(ConfigEvent.SetAgentName("juno II"))   
+      152 -            assertEquals("juno II", awaitUntil { it.agentNameI
+          -nput == "juno II" }.agentNameInput)                           
+      152 +            advanceUntilIdle()                                
+      153 +            assertEquals("zephyr", vm.agentNameState.text.toSt
+          +ring())                                                       
+      154 +            cancelAndIgnoreRemainingEvents()                  
+      155 +        }                                                     
+      156 +        h.close()                                             
+      157 +    }                                                         
+      158 +                                                              
+      159 +    @Test                                                     
+      160 +    fun agentName_editsPersist_withoutFieldEverBeingRewritten(
+          +) = runTest {                                                 
+      161 +        val h = VmHarness(this)                               
+      162 +        val vm = vm(h)                                        
+      163 +        vm.state.test {                                       
+      164 +            awaitUntil { it.loaded }                          
+      165 +            advanceUntilIdle() // seeding done                
+      166 +            // simulate fast typing: two edits before persiste
+          +nce catches up                                                
+      167 +            vm.agentNameState.type("jun")                     
+      168 +            vm.agentNameState.type("juno II")                 
+      169 +            awaitUntil { it.settings.agentName == "juno II" } 
+      170              // late DataStore emissions must never revert the 
+           field text
+      171              advanceUntilIdle()
+      155 -            assertEquals("juno II", vm.state.value.agentNameIn
+          -put)                                                          
+      172 +            assertEquals("juno II", vm.agentNameState.text.toS
+          +tring())                                                      
+      173              assertEquals("juno II", vm.state.value.settings.ag
+           entName)
+      174              cancelAndIgnoreRemainingEvents()
+      175          }
+     ...
+      182          val vm = vm(h)
+      183          vm.state.test {
+      184              awaitUntil { it.loaded }
+      168 -            vm.onEvent(ConfigEvent.SetApiKeyInput("hm_01234567
+          -89abcdef3kf2"))                                               
+      185 +            vm.apiKeyState.type("hm_0123456789abcdef3kf2")    
+      186              vm.onEvent(ConfigEvent.SaveApiKey)
+      187              val masked = awaitUntil { it.apiKeyMasked != null 
+           }.apiKeyMasked
+      188              assertEquals("hm_" + "••••••••••••" + "3kf2", mask
+           ed)
+      189              assertEquals("hm_0123456789abcdef3kf2", h.apiKeySt
+           ore.get())
+      190 +            assertEquals("", vm.apiKeyState.text.toString()) /
+          +/ input cleared after save                                    
+      191              cancelAndIgnoreRemainingEvents()
+      192          }
+      193          h.close()
+
+⏺ Now the NewThreadViewModelTest rewrite:
+
+⏺ Update(app/src/test/java/net/liquidx/leman/ui/newthread/NewThreadViewModelTest
+        .kt)
+  ⎿  Added 8 lines, removed 14 lines
+       7  import net.liquidx.leman.domain.model.RunEvent
+       8  import net.liquidx.leman.testutil.MainDispatcherRule
+       9  import net.liquidx.leman.testutil.VmHarness
+      10 -import net.liquidx.leman.ui.threads.awaitUntil                 
+      10 +import net.liquidx.leman.testutil.type                         
+      11  import org.junit.Assert.assertEquals
+      12 -import org.junit.Assert.assertFalse                            
+      12  import org.junit.Assert.assertTrue
+      13  import org.junit.Rule
+      14  import org.junit.Test
+     ...
+      22      val mainRule = MainDispatcherRule()
+      23  
+      24      @Test
+      26 -    fun canStart_onlyWithNonBlankText() = runTest {            
+      25 +    fun start_ignoresBlankText() = runTest {                   
+      26          val h = VmHarness(this)
+      27          val vm = NewThreadViewModel(h.repo, h.settingsStore)
+      29 -        vm.state.test {                                        
+      30 -            assertFalse(awaitItem().canStart)                  
+      31 -            vm.onEvent(NewThreadEvent.SetText("   "))          
+      32 -            advanceUntilIdle()                                 
+      33 -            assertFalse(vm.state.value.canStart)               
+      34 -            vm.onEvent(NewThreadEvent.SetText("plan lyon trip")
+         -)                                                              
+      35 -            assertTrue(awaitUntil { it.text == "plan lyon trip"
+         - }.canStart)                                                   
+      36 -            cancelAndIgnoreRemainingEvents()                   
+      37 -        }                                                      
+      28 +        vm.textState.type("   ")                               
+      29 +        vm.onEvent(NewThreadEvent.Start)                       
+      30 +        advanceUntilIdle()                                     
+      31 +        assertTrue(h.repo.observeThreads().first().isEmpty())  
+      32          h.close()
+      33      }
+      34  
+     ...
+      40          )
+      41          val vm = NewThreadViewModel(h.repo, h.settingsStore)
+      42          vm.created.test {
+      49 -            vm.onEvent(NewThreadEvent.SetText("plan lyon trip")
+         -)                                                              
+      43 +            vm.textState.type("plan lyon trip")                
+      44              vm.onEvent(NewThreadEvent.Start)
+      45              val id = awaitItem()
+      46              advanceUntilIdle()
+     ...
+      58              listOf(RunEvent.MessageDelta("x", 1.0), RunEvent.Ru
+          nCompleted("x", null, 2.0)),
+      59          )
+      60          val vm = NewThreadViewModel(h.repo, h.settingsStore)
+      67 -        vm.onEvent(NewThreadEvent.SetText("only once"))        
+      61 +        vm.textState.type("only once")                         
+      62          vm.onEvent(NewThreadEvent.Start)
+      63          vm.onEvent(NewThreadEvent.Start)
+      64          advanceUntilIdle()
+
+⏺ Verifying RED — these should fail compilation on exactly the new API surface
+  (serverUrlState, agentNameState, apiKeyState, textState):
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ RED confirmed — failing exactly on the missing new API. Task 1 done. Now the
+  implementation, starting with PromptField:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ No other consumers of the removed events. Migrating PromptField and Composer:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Inputs.kt)  ⎿  Added 3 lines, removed 1 line
+      19  import androidx.compose.foundation.layout.size
+      20  import androidx.compose.foundation.layout.width
+      21  import androidx.compose.foundation.text.BasicTextField
+      22 -import androidx.compose.foundation.text.KeyboardActions        
+      22  import androidx.compose.foundation.text.KeyboardOptions
+      23 +import androidx.compose.foundation.text.input.TextFieldLineLimi
+         +ts                                                             
+      24 +import androidx.compose.foundation.text.input.TextFieldState   
+      25 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      26  import androidx.compose.material3.Text
+      27  import androidx.compose.runtime.Composable
+      28  import androidx.compose.runtime.getValue
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Inputs.kt)
+  ⎿  Added 9 lines, removed 9 lines
+      73   * The one reusable input (spec 06): accent `>` prompt, mono te
+          xt, blinking
+      74   * caret when empty, right `⏎ hint`. Hairline variant for searc
+          h/composer;
+      75   * accent-border variant for the primary new-thread affordances
+          .
+      76 + *                                                             
+      77 + * State-based on purpose: the field owns its text buffer, so c
+         +allers must                                                    
+      78 + * never write the value back per keystroke (an async round-tri
+         +p through a                                                    
+      79 + * ViewModel resets the cursor mid-typing).                    
+      80   */
+      81  @Composable
+      82  fun PromptField(
+      79 -    value: String,                                             
+      80 -    onValueChange: (String) -> Unit,                           
+      83 +    state: TextFieldState,                                     
+      84      placeholder: String,
+      85      modifier: Modifier = Modifier,
+      86      hint: String? = null,
+     ...
+      100      ) {
+      101          Text("> ", style = LemanType.body, color = LemanColors
+           .accent.copy(alpha = alpha))
+      102          Box(Modifier.weight(1f)) {
+      100 -            if (value.isEmpty()) {                            
+      103 +            if (state.text.isEmpty()) {                       
+      104                  Row(verticalAlignment = Alignment.CenterVertic
+           ally) {
+      105                      Text(
+      106                          placeholder,
+     ...
+      111                  }
+      112              }
+      113              BasicTextField(
+      111 -                value = value,                                
+      112 -                onValueChange = onValueChange,                
+      114 +                state = state,                                
+      115                  enabled = enabled,
+      116                  textStyle = LemanType.body.copy(color = LemanC
+           olors.textPrimary),
+      117                  cursorBrush = SolidColor(LemanColors.accent),
+      116 -                singleLine = true,                            
+      118 +                lineLimits = TextFieldLineLimits.SingleLine,  
+      119                  keyboardOptions = KeyboardOptions(imeAction = 
+           ImeAction.Send),
+      118 -                keyboardActions = KeyboardActions(            
+      119 -                    onSend = { if (value.isNotBlank()) onSubmi
+          -t() },                                                        
+      120 -                ),                                            
+      120 +                onKeyboardAction = { if (state.text.isNotBlank
+          +()) onSubmit() },                                             
+      121                  modifier = Modifier.fillMaxWidth(),
+      122              )
+      123          }
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Inputs.kt)
+  ⎿  Added 3 lines, removed 3 lines
+      197          verticalArrangement = androidx.compose.foundation.layo
+           ut.Arrangement.spacedBy(12.dp),
+      198          modifier = Modifier.padding(16.dp),
+      199      ) {
+      200 -        PromptField("", {}, placeholder = "filter threads", hi
+          -nt = "⏎ find")                                                
+      201 -        PromptField("", {}, placeholder = "new thread", hint =
+          - "⏎ start", accentBorder = true)                              
+      202 -        PromptField("book train to geneva", {}, placeholder = 
+          -"message juno", hint = "⏎ send")                              
+      200 +        PromptField(rememberTextFieldState(), placeholder = "f
+          +ilter threads", hint = "⏎ find")                              
+      201 +        PromptField(rememberTextFieldState(), placeholder = "n
+          +ew thread", hint = "⏎ start", accentBorder = true)            
+      202 +        PromptField(rememberTextFieldState("book train to gene
+          +va"), placeholder = "message juno", hint = "⏎ send")          
+      203          Row(horizontalArrangement = androidx.compose.foundatio
+           n.layout.Arrangement.spacedBy(10.dp)) {
+      204              LemanToggle(true, {})
+      205              LemanToggle(false, {})
+
+⏺ Now the Composer in ThreadView.kt:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/ThreadView.kt)
+  ⎿  Added 2 lines, removed 4 lines
+      363  @Composable
+      364  fun Composer(
+      365      agentName: String,
+      366 -    value: String,                                            
+      367 -    onValueChange: (String) -> Unit,                          
+      366 +    state: TextFieldState,                                    
+      367      onSend: () -> Unit,
+      368      modifier: Modifier = Modifier,
+      369      enabled: Boolean = true,
+      370  ) {
+      371      Box(modifier = modifier.fillMaxWidth().padding(horizontal 
+           = 18.dp, vertical = 12.dp)) {
+      372          PromptField(
+      374 -            value = value,                                    
+      375 -            onValueChange = onValueChange,                    
+      373 +            state = state,                                    
+      374              placeholder = "message $agentName",
+      375              hint = "⏎ send",
+      376              enabled = enabled,
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/ThreadView.kt)
+  ⎿  Added 2 lines
+      17  import androidx.compose.foundation.layout.padding
+      18  import androidx.compose.foundation.layout.size
+      19  import androidx.compose.foundation.layout.width
+      20 +import androidx.compose.foundation.text.input.TextFieldState   
+      21 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      22  import androidx.compose.material3.Text
+      23  import androidx.compose.runtime.Composable
+      24  import androidx.compose.runtime.getValue
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/ThreadView.kt)
+  ⎿  Added 1 line, removed 1 line
+      414          TurnGutterRow("22:03") {
+      415              UserTurn("this send failed", viaButton = false, fa
+           iled = true)
+      416          }
+      417 -        Composer("juno", "", {}, {})                          
+      417 +        Composer("juno", rememberTextFieldState(), {})        
+      418      }
+      419  }
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt)
+  ⎿  Added 4 lines
+      1  package net.liquidx.leman.ui.config
+      2  
+      3 +import androidx.compose.foundation.text.input.TextFieldState    
+      4 +import androidx.compose.foundation.text.input.clearText         
+      5 +import androidx.compose.foundation.text.input.setTextAndPlaceCur
+        +sorAtEnd                                                        
+      6 +import androidx.compose.runtime.snapshotFlow                    
+      7  import androidx.lifecycle.ViewModel
+      8  import androidx.lifecycle.viewModelScope
+      9  import kotlinx.coroutines.Job
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt)
+  ⎿  Removed 6 lines
+      34  }
+      35  
+      36  data class ConfigUiState(
+      37 -    val serverUrlInput: String = "",                           
+      37      val urlError: String? = null,
+      38      val apiKeyMasked: String? = null,       // null = no key st
+          ored
+      40 -    val apiKeyInput: String = "",                              
+      41 -    val agentNameInput: String = Settings.DEFAULT_AGENT_NAME,  
+      39      val revealedKey: String? = null,
+      40      val settings: Settings = Settings(),
+      41      val connState: ConnState = ConnState.NotConfigured,
+     ...
+      45  )
+      46  
+      47  sealed interface ConfigEvent {
+      51 -    data class SetServerUrlInput(val value: String) : ConfigEve
+         -nt                                                             
+      48      data object SaveServerUrl : ConfigEvent
+      49      data object TestConnection : ConfigEvent
+      54 -    data class SetApiKeyInput(val value: String) : ConfigEvent 
+      50      data object SaveApiKey : ConfigEvent
+      51      data object RevealKey : ConfigEvent
+      52      data object HideKey : ConfigEvent
+      53      data class SetBiometricUnlock(val enabled: Boolean) : Confi
+          gEvent
+      59 -    data class SetAgentName(val name: String) : ConfigEvent    
+      54      data class SelectGlyph(val glyph: String) : ConfigEvent
+      55      data class SetExpandTraces(val enabled: Boolean) : ConfigEv
+          ent
+      56      data class SetShowToolArgs(val enabled: Boolean) : ConfigEv
+          ent
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt)
+  ⎿  Added 33 lines, removed 21 lines
+      65      private val allowHttp: Boolean = false, // debug builds may
+           target LAN gateways
+      66  ) : ViewModel() {
+      67  
+      68 -    private val urlInput = MutableStateFlow<String?>(null) // n
+         -ull = mirror settings                                          
+      68 +    /**                                                        
+      69 +     * Field buffers, owned here so they survive navigation. Th
+         +e fields are the                                               
+      70 +     * source of truth while editing — nothing writes text back
+         + into them per                                                 
+      71 +     * keystroke (an async round-trip resets the cursor); we on
+         +ly seed them once                                              
+      72 +     * from DataStore and mirror agent-name edits out via [snap
+         +shotFlow].                                                     
+      73 +     */                                                        
+      74 +    val serverUrlState = TextFieldState()                      
+      75 +    val apiKeyState = TextFieldState()                         
+      76 +    val agentNameState = TextFieldState()                      
+      77 +                                                               
+      78      private val urlError = MutableStateFlow<String?>(null)
+      70 -    private val agentNameInput = MutableStateFlow<String?>(null
+         -) // null = mirror settings                                    
+      79 +    private var erroredUrlText: String? = null // field text th
+         +at produced urlError                                           
+      80      private val apiKeyMasked = MutableStateFlow<String?>(null)
+      72 -    private val apiKeyInput = MutableStateFlow("")             
+      81      private val revealedKey = MutableStateFlow<String?>(null)
+      82      private val testResult = MutableStateFlow<TestConnectionSta
+          te>(TestConnectionState.Idle)
+      83      private val confirmClearArmed = MutableStateFlow(false)
+     ...
+       85  
+       86      init {
+       87          viewModelScope.launch { refreshMask() }
+       88 +        viewModelScope.launch {                               
+       89 +            val stored = settingsStore.settings.first()       
+       90 +            if (serverUrlState.text.isEmpty()) serverUrlState.
+          +setTextAndPlaceCursorAtEnd(stored.serverUrl)                  
+       91 +            if (agentNameState.text.isEmpty()) agentNameState.
+          +setTextAndPlaceCursorAtEnd(stored.agentName)                  
+       92 +            snapshotFlow { agentNameState.text.toString() }.co
+          +llect { name ->                                               
+       93 +                settingsStore.update { if (it.agentName == nam
+          +e) it else it.copy(agentName = name) }                        
+       94 +            }                                                 
+       95 +        }                                                     
+       96 +        viewModelScope.launch {                               
+       97 +            // Editing the url clears its validation error. Co
+          +mpared against the                                            
+       98 +            // text that failed so a queued emission can't wip
+          +e a fresh error.                                              
+       99 +            snapshotFlow { serverUrlState.text.toString() }.co
+          +llect { text ->                                               
+      100 +                if (erroredUrlText != null && text != erroredU
+          +rlText) {                                                     
+      101 +                    erroredUrlText = null                     
+      102 +                    urlError.value = null                     
+      103 +                }                                             
+      104 +            }                                                 
+      105 +        }                                                     
+      106      }
+      107  
+      108      val state: StateFlow<ConfigUiState> = combine(
+      109          settingsStore.settings,
+      110          connectionManager.state,
+       85 -        urlInput,                                             
+      111          urlError,
+       87 -        combine(apiKeyMasked, apiKeyInput, revealedKey) { m, i
+          -, r -> Triple(m, i, r) },                                     
+       88 -        combine(testResult, confirmClearArmed, agentNameInput)
+          - { t, c, n -> Triple(t, c, n) },                              
+       89 -    ) { values ->                                             
+       90 -        val settings = values[0] as Settings                  
+       91 -        val conn = values[1] as ConnState                     
+       92 -        val input = values[2] as String?                      
+       93 -        val error = values[3] as String?                      
+       94 -                                                              
+       95 -        @Suppress("UNCHECKED_CAST")                           
+       96 -        val key = values[4] as Triple<String?, String, String?
+          ->                                                             
+       97 -                                                              
+       98 -        @Suppress("UNCHECKED_CAST")                           
+       99 -        val misc = values[5] as Triple<TestConnectionState, Bo
+          -olean, String?>                                               
+      112 +        combine(apiKeyMasked, revealedKey) { m, r -> m to r },
+      113 +        combine(testResult, confirmClearArmed) { t, c -> t to 
+          +c },                                                          
+      114 +    ) { settings, conn, error, key, misc ->                   
+      115          ConfigUiState(
+      101 -            serverUrlInput = input ?: settings.serverUrl,     
+      116              urlError = error,
+      117              apiKeyMasked = key.first,
+      104 -            apiKeyInput = key.second,                         
+      105 -            revealedKey = key.third,                          
+      106 -            agentNameInput = misc.third ?: settings.agentName,
+      118 +            revealedKey = key.second,                         
+      119              settings = settings,
+      120              connState = conn,
+      121              testResult = misc.first,
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt)
+  ⎿  Added 2 lines, removed 13 lines
+      126  
+      127      fun onEvent(event: ConfigEvent) {
+      128          when (event) {
+      129 -            is ConfigEvent.SetServerUrlInput -> {             
+      130 -                urlInput.value = event.value                  
+      131 -                urlError.value = null                         
+      132 -            }                                                 
+      129              ConfigEvent.SaveServerUrl -> saveServerUrl()
+      130              ConfigEvent.TestConnection -> testConnection()
+      135 -            is ConfigEvent.SetApiKeyInput -> apiKeyInput.value
+          - = event.value                                                
+      131              ConfigEvent.SaveApiKey -> viewModelScope.launch {
+      137 -                val value = apiKeyInput.value.trim()          
+      132 +                val value = apiKeyState.text.toString().trim()
+      133                  if (value.isEmpty()) return@launch
+      134                  apiKeyStore.set(value)
+      140 -                apiKeyInput.value = ""                        
+      135 +                apiKeyState.clearText()                       
+      136                  refreshMask()
+      137                  connectionManager.reconfigure()
+      138              }
+      139              ConfigEvent.RevealKey -> viewModelScope.launch { r
+           evealedKey.value = apiKeyStore.get() }
+      140              ConfigEvent.HideKey -> revealedKey.value = null
+      141              is ConfigEvent.SetBiometricUnlock -> update { it.c
+           opy(biometricUnlock = event.enabled) }
+      147 -            is ConfigEvent.SetAgentName -> {                  
+      148 -                // Echo synchronously so the text field never 
+          -sees a stale                                                  
+      149 -                // round-trip through DataStore (it resets the
+          - cursor).                                                     
+      150 -                agentNameInput.value = event.name             
+      151 -                update { it.copy(agentName = event.name) }    
+      152 -            }                                                 
+      142              is ConfigEvent.SelectGlyph -> {
+      143                  if (event.glyph in Settings.GLYPH_CHOICES) {
+      144                      update { it.copy(agentGlyph = event.glyph)
+            }
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt)
+  ⎿  Added 7 lines, removed 3 lines
+      167  
+      168      /** Local validation before save (spec 04 §5): scheme + ho
+           st. */
+      169      private fun saveServerUrl() {
+      170 -        val raw = (urlInput.value ?: return).trim()           
+      170 +        val fieldText = serverUrlState.text.toString()        
+      171 +        val raw = fieldText.trim()                            
+      172          val uri = runCatching { java.net.URI(raw) }.getOrNull(
+           )
+      173          val schemeOk = uri?.scheme == "https" || (allowHttp &&
+            uri?.scheme == "http")
+      174          if (uri == null || !schemeOk || uri.host.isNullOrBlank
+           ()) {
+      175 +            erroredUrlText = fieldText                        
+      176              urlError.value = if (allowHttp) "enter an http(s):
+           // origin" else "enter an https:// origin"
+      177              return
+      178          }
+      179 +        erroredUrlText = null                                 
+      180          urlError.value = null
+      181          viewModelScope.launch {
+      179 -            settingsStore.update { it.copy(serverUrl = raw.tri
+          -mEnd('/')) }                                                  
+      180 -            urlInput.value = null                             
+      182 +            val normalized = raw.trimEnd('/')                 
+      183 +            settingsStore.update { it.copy(serverUrl = normali
+          +zed) }                                                        
+      184 +            serverUrlState.setTextAndPlaceCursorAtEnd(normaliz
+          +ed)                                                           
+      185              connectionManager.reconfigure()
+      186          }
+      187      }
+
+⏺ Now NewThreadViewModel:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadViewModel.kt)
+  ⎿  Added 8 lines, removed 11 lines
+      1  package net.liquidx.leman.ui.newthread
+      2  
+      3 +import androidx.compose.foundation.text.input.TextFieldState    
+      4  import androidx.lifecycle.ViewModel
+      5  import androidx.lifecycle.viewModelScope
+      6  import kotlinx.coroutines.flow.MutableSharedFlow
+     ...
+      17  import net.liquidx.leman.domain.model.Settings
+      18  
+      19  data class NewThreadUiState(
+      19 -    val text: String = "",                                     
+      20      val agentName: String = Settings.DEFAULT_AGENT_NAME,
+      21      val starting: Boolean = false,
+      22 -) {                                                            
+      23 -    val canStart: Boolean get() = text.isNotBlank() && !startin
+         -g                                                              
+      24 -}                                                              
+      22 +)                                                              
+      23  
+      24  sealed interface NewThreadEvent {
+      27 -    data class SetText(val text: String) : NewThreadEvent      
+      25      data object Start : NewThreadEvent
+      26  }
+      27  
+     ...
+      30      settingsStore: SettingsStore,
+      31  ) : ViewModel() {
+      32  
+      36 -    private val text = MutableStateFlow("")                    
+      33 +    /** Composer buffer — the field owns its text; 2c always op
+         +ens a fresh draft. */                                          
+      34 +    val textState = TextFieldState()                           
+      35 +                                                               
+      36      private val starting = MutableStateFlow(false)
+      37  
+      38      /** One-shot: emits the created thread id → navigate to 2b.
+           */
+     ...
+      40      val created: SharedFlow<String> = _created.asSharedFlow()
+      41  
+      42      val state: StateFlow<NewThreadUiState> = combine(
+      44 -        text,                                                  
+      43          settingsStore.settings,
+      44          starting,
+      47 -    ) { t, settings, s ->                                      
+      48 -        NewThreadUiState(text = t, agentName = settings.agentNa
+         -me, starting = s)                                              
+      45 +    ) { settings, s ->                                         
+      46 +        NewThreadUiState(agentName = settings.agentName, starti
+         +ng = s)                                                        
+      47      }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_
+          000), NewThreadUiState())
+      48  
+      49      fun onEvent(event: NewThreadEvent) {
+      50          when (event) {
+      53 -            is NewThreadEvent.SetText -> text.value = event.tex
+         -t                                                              
+      51              NewThreadEvent.Start -> {
+      55 -                val message = text.value.trim()                
+      52 +                val message = textState.text.toString().trim() 
+      53                  if (message.isEmpty() || starting.value) return
+      54                  starting.value = true
+      55                  viewModelScope.launch {
+
+⏺ ViewModels done. Now the screens — ConfigScreen first:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 2 lines
+      10  import androidx.compose.foundation.layout.height
+      11  import androidx.compose.foundation.layout.padding
+      12  import androidx.compose.foundation.rememberScrollState
+      13 +import androidx.compose.foundation.text.input.TextFieldState   
+      14 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      15  import androidx.compose.foundation.verticalScroll
+      16  import androidx.compose.material3.Text
+      17  import androidx.compose.runtime.Composable
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 3 lines
+      49      onExport: () -> Unit,
+      50      onOpenThreads: () -> Unit,
+      51      onSelectTab: (LemanTab) -> Unit = {},
+      52 +    serverUrlState: TextFieldState = rememberTextFieldState(), 
+      53 +    apiKeyState: TextFieldState = rememberTextFieldState(),    
+      54 +    agentNameState: TextFieldState = rememberTextFieldState(), 
+      55  ) {
+      56      ScreenFrame(
+      57          statusRow = { StatusRow(clock, state.connState) },
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 1 line, removed 2 lines
+      86              FieldLabel("hermes agent url")
+      87              Box(Modifier.padding(horizontal = 18.dp)) {
+      88                  PromptField(
+      89 -                    value = state.serverUrlInput,              
+      90 -                    onValueChange = { onEvent(ConfigEvent.SetSe
+         -rverUrlInput(it)) },                                           
+      89 +                    state = serverUrlState,                    
+      90                      placeholder = Settings.DEFAULT_SERVER_URL,
+      91                      hint = "⏎ save",
+      92                      onSubmit = { onEvent(ConfigEvent.SaveServer
+          Url) },
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 1 line, removed 2 lines
+      135              }
+      136              Box(Modifier.padding(horizontal = 18.dp, vertical 
+           = 4.dp)) {
+      137                  PromptField(
+      138 -                    value = state.apiKeyInput,                
+      139 -                    onValueChange = { onEvent(ConfigEvent.SetA
+          -piKeyInput(it)) },                                            
+      138 +                    state = apiKeyState,                      
+      139                      placeholder = "paste api key",
+      140                      hint = "⏎ save",
+      141                      onSubmit = { onEvent(ConfigEvent.SaveApiKe
+           y) },
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 1 line, removed 2 lines
+      152              FieldLabel("agent name")
+      153              Box(Modifier.padding(horizontal = 18.dp)) {
+      154                  PromptField(
+      155 -                    value = state.agentNameInput,             
+      156 -                    onValueChange = { onEvent(ConfigEvent.SetA
+          -gentName(it)) },                                              
+      155 +                    state = agentNameState,                   
+      156                      placeholder = Settings.DEFAULT_AGENT_NAME,
+      157                  )
+      158              }
+
+⏺ NewThreadScreen next:
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadScreen.kt)
+  ⎿  Added 2 lines
+       9  import androidx.compose.foundation.layout.fillMaxWidth
+      10  import androidx.compose.foundation.layout.padding
+      11  import androidx.compose.foundation.text.BasicTextField
+      12 +import androidx.compose.foundation.text.input.TextFieldState   
+      13 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      14  import androidx.compose.material3.Text
+      15  import androidx.compose.runtime.Composable
+      16  import androidx.compose.ui.Alignment
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadScreen.kt)
+  ⎿  Added 1 line
+      37      connState: ConnState,
+      38      onEvent: (NewThreadEvent) -> Unit,
+      39      onCancel: () -> Unit,
+      40 +    textState: TextFieldState = rememberTextFieldState(),      
+      41  ) {
+      42      ScreenFrame(
+      43          statusRow = { StatusRow(clock, connState) },
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadScreen.kt)
+  ⎿  Added 3 lines, removed 4 lines
+      66                      .hairlineBorder(LemanColors.accent)
+      67                      .padding(14.dp),
+      68              ) {
+      69 -                if (state.text.isEmpty()) {                    
+      69 +                if (textState.text.isEmpty()) {                
+      70                      Row(verticalAlignment = Alignment.CenterVer
+          tically) {
+      71                          Text("> ", style = LemanType.bodyLarge,
+           color = LemanColors.accent)
+      72                          Text(
+     ...
+      78                      }
+      79                  }
+      80                  BasicTextField(
+      81 -                    value = state.text,                        
+      82 -                    onValueChange = { onEvent(NewThreadEvent.Se
+         -tText(it)) },                                                  
+      81 +                    state = textState,                         
+      82                      textStyle = LemanType.bodyLarge.copy(color 
+          = LemanColors.textPrimary),
+      83                      cursorBrush = SolidColor(LemanColors.accent
+          ),
+      84                      modifier = Modifier.fillMaxWidth().defaultM
+          inSize(minHeight = 112.dp),
+     ...
+      89                      label = "start thread ⏎",
+      90                      onClick = { onEvent(NewThreadEvent.Start) }
+          ,
+      91                      kind = LemanButtonKind.Primary,
+      93 -                    enabled = state.canStart,                  
+      92 +                    enabled = textState.text.isNotBlank() && !s
+         +tate.starting,                                                 
+      93                      modifier = Modifier.fillMaxWidth(),
+      94                  )
+      95              }
+
+⏺ ThreadsScreen — the filter field and the new-thread affordance:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsScreen.kt)
+  ⎿  Added 3 lines, removed 4 lines
+       6  import androidx.compose.foundation.layout.fillMaxWidth
+       7  import androidx.compose.foundation.layout.padding
+       8  import androidx.compose.foundation.lazy.LazyColumn
+       9 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      10  import androidx.compose.material3.Text
+      11  import androidx.compose.runtime.Composable
+      11 -import androidx.compose.runtime.getValue                       
+      12 -import androidx.compose.runtime.mutableStateOf                 
+      13 -import androidx.compose.runtime.remember                       
+      14 -import androidx.compose.runtime.setValue                       
+      12 +import androidx.compose.runtime.LaunchedEffect                 
+      13 +import androidx.compose.runtime.snapshotFlow                   
+      14  import androidx.compose.ui.Modifier
+      15  import androidx.compose.ui.text.SpanStyle
+      16  import androidx.compose.ui.text.buildAnnotatedString
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsScreen.kt)
+  ⎿  Added 6 lines, removed 6 lines
+      71              })
+      72          },
+      73      ) {
+      74 -        var filterText by remember { mutableStateOf(state.filte
+         -r) }                                                           
+      74 +        val filterState = rememberTextFieldState(state.filter) 
+      75 +        LaunchedEffect(filterState) {                          
+      76 +            snapshotFlow { filterState.text.toString() }       
+      77 +                .collect { onEvent(ThreadsEvent.SetFilter(it)) 
+         +}                                                              
+      78 +        }                                                      
+      79          LazyColumn {
+      80              // Filter row scrolls with the list — it is not pin
+          ned (design 2a).
+      81              item(key = "filter") {
+      82                  Box(Modifier.padding(horizontal = 18.dp, vertic
+          al = 8.dp)) {
+      83                      PromptField(
+      80 -                        value = filterText,                    
+      81 -                        onValueChange = {                      
+      82 -                            filterText = it                    
+      83 -                            onEvent(ThreadsEvent.SetFilter(it))
+      84 -                        },                                     
+      84 +                        state = filterState,                   
+      85                          placeholder = "filter threads",
+      86                          hint = "⏎ find",
+      87                      )
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsScreen.kt)
+  ⎿  Added 1 line, removed 2 lines
+      152      ) {
+      153          Box {
+      154              PromptField(
+      155 -                value = "",                                   
+      156 -                onValueChange = {},                           
+      155 +                state = rememberTextFieldState(),             
+      156                  placeholder = "new thread",
+      157                  hint = "⏎ start",
+      158                  accentBorder = true,
+
+⏺ ThreadScreen composer:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/thread/ThreadScreen.kt)
+  ⎿  Added 2 lines, removed 3 lines
+      11  import androidx.compose.foundation.layout.windowInsetsPadding
+      12  import androidx.compose.foundation.lazy.LazyColumn
+      13  import androidx.compose.foundation.lazy.rememberLazyListState
+      14 +import androidx.compose.foundation.text.input.clearText        
+      15 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      16  import androidx.compose.material3.Text
+      17  import androidx.compose.runtime.Composable
+      18  import androidx.compose.runtime.LaunchedEffect
+      19  import androidx.compose.runtime.derivedStateOf
+      20  import androidx.compose.runtime.getValue
+      19 -import androidx.compose.runtime.mutableStateOf                 
+      21  import androidx.compose.runtime.remember
+      21 -import androidx.compose.runtime.saveable.rememberSaveable      
+      22 -import androidx.compose.runtime.setValue                       
+      22  import androidx.compose.ui.Modifier
+      23  import androidx.compose.ui.unit.dp
+      24  import net.liquidx.leman.domain.model.SendState
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/thread/ThreadScreen.kt)
+  ⎿  Added 1 line, removed 1 line
+      47      onBack: () -> Unit,
+      48      onLinkClick: (String) -> Unit = {},
+      49  ) {
+      50 -    var composerText by rememberSaveable { mutableStateOf("") }
+      50 +    val composerState = rememberTextFieldState()               
+      51      val listState = rememberLazyListState()
+      52  
+      53      // Follow the bottom while streaming only if already there 
+          (spec 05).
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/thread/ThreadScreen.kt)
+  ⎿  Added 5 lines, removed 5 lines
+      171          }
+      172          Composer(
+      173              agentName = state.agentProfile.name,
+      174 -            value = composerText,                             
+      175 -            onValueChange = { composerText = it },            
+      174 +            state = composerState,                            
+      175              onSend = {
+      177 -                if (composerText.isNotBlank()) {              
+      178 -                    onEvent(ThreadEvent.Send(composerText))   
+      179 -                    composerText = ""                         
+      176 +                val text = composerState.text.toString()      
+      177 +                if (text.isNotBlank()) {                      
+      178 +                    onEvent(ThreadEvent.Send(text))           
+      179 +                    composerState.clearText()                 
+      180                  }
+      181              },
+      182              enabled = state.composerEnabled,
+
+⏺ Now the NavHost wiring:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 1 line
+      160                  connState = connState,
+      161                  onEvent = vm::onEvent,
+      162                  onCancel = { navController.popBackStack() },
+      163 +                textState = vm.textState,                     
+      164              )
+      165          }
+      166  
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 3 lines
+      200                  },
+      201                  onOpenThreads = { navController.navigate(Route
+           s.THREADS) { launchSingleTop = true } },
+      202                  onSelectTab = { tab -> navController.navigate(
+           tab.id) { launchSingleTop = true } },
+      203 +                serverUrlState = vm.serverUrlState,           
+      204 +                apiKeyState = vm.apiKeyState,                 
+      205 +                agentNameState = vm.agentNameState,           
+      206              )
+      207          }
+      208  
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/DebugScreen.kt)
+  ⎿  Added 3 lines, removed 2 lines
+      56      val scenario = hooks.switchable?.fake?.scenario?.collectAsS
+          tate()
+      57  
+      58      var eventsPaused by remember { mutableStateOf(false) }
+      59 -    var eventFilter by remember { mutableStateOf("") }         
+      59 +    val eventFilterState = rememberTextFieldState()            
+      60      var expandedNetId by remember { mutableStateOf<Long?>(null)
+           }
+      61 -    var playground by remember { mutableStateOf("") }          
+      61 +    val playgroundState = rememberTextFieldState()             
+      62  
+      63 +    val eventFilter = eventFilterState.text.toString()         
+      64      val frozenEvents = remember(eventsPaused) { if (eventsPause
+          d) events else null }
+      65      val shownEvents = (frozenEvents ?: events)
+      66          .filter { eventFilter.isBlank() || it.name.contains(eve
+          ntFilter, true) || it.payload.contains(eventFilter, true) }
+
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/DebugScreen.kt)
+  ⎿  Added 1 line, removed 1 line
+      205                      modifier = Modifier.padding(horizontal = 1
+           8.dp, vertical = 4.dp),
+      206                  ) {
+      207                      Box(Modifier.weight(1f)) {
+      208 -                        PromptField(eventFilter, { eventFilter
+          - = it }, placeholder = "filter events")                       
+      208 +                        PromptField(eventFilterState, placehol
+          +der = "filter events")                                        
+      209                      }
+      210                      LemanButton(if (eventsPaused) "resume" els
+           e "pause", { eventsPaused = !eventsPaused })
+      211                  }
+
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/DebugScreen.kt)
+  ⎿  Added 3 lines, removed 3 lines
+      223                  SectionHeader("render")
+      224                  DebugCaption("markdown playground — renders th
+           rough MarkdownBody live")
+      225                  Box(Modifier.padding(horizontal = 18.dp, verti
+           cal = 6.dp)) {
+      226 -                    PromptField(playground, { playground = it 
+          -}, placeholder = "type markdown…")                            
+      226 +                    PromptField(playgroundState, placeholder =
+          + "type markdown…")                                            
+      227                  }
+      228 -                if (playground.isNotBlank()) {                
+      228 +                if (playgroundState.text.isNotBlank()) {      
+      229                      Box(Modifier.padding(horizontal = 18.dp, v
+           ertical = 6.dp)) {
+      230 -                        MarkdownBody(playground)              
+      230 +                        MarkdownBody(playgroundState.text.toSt
+          +ring())                                                       
+      231                      }
+      232                  }
+      233                  Box(Modifier.height(24.dp))
+
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/DebugScreen.kt)
+  ⎿  Added 1 line
+      10  import androidx.compose.foundation.layout.padding
+      11  import androidx.compose.foundation.lazy.LazyColumn
+      12  import androidx.compose.material3.Text
+      13 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+      14  import androidx.compose.runtime.Composable
+      15  import androidx.compose.runtime.collectAsState
+      16  import androidx.compose.runtime.getValue
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 1 line
+       4  import androidx.compose.foundation.layout.Column
+       5  import androidx.compose.foundation.layout.size
+       6  import androidx.compose.foundation.rememberScrollState
+       7 +import androidx.compose.foundation.text.input.rememberTextField
+         +State                                                          
+       8  import androidx.compose.foundation.verticalScroll
+       9  import androidx.compose.runtime.Composable
+      10  import androidx.compose.ui.Modifier
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)  ⎿  Added 1 line, removed 1 line
+      174      fun config_default() = snap("2d-config") {
+      175          ConfigScreen(
+      176              state = ConfigUiState(
+      177 -                serverUrlInput = "https://api.gent.ino.ink",  
+      177                  apiKeyMasked = "hm_••••••••••••3kf2",
+      178                  connState = ConnState.Online("0.18.0"),
+      179                  testResult = TestConnectionState.Ok("hermes-ag
+           ent", "0.18.0"),
+     ...
+      182              clock = "09:41", tabs = tabs, appVersion = "0.1",
+      183              onEvent = {}, onRevealRequested = {}, onExport = {
+           },
+      184              onOpenThreads = {},
+      185 +            serverUrlState = rememberTextFieldState("https://a
+          +pi.gent.ino.ink"),                                            
+      186          )
+      187      }
+      188  
+
+⏺ All call sites updated. Compiling everything:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Two failures. Let me get the details — the exact assertion frames in the HTML
+  report and the awaitUntil helper:
+
+  Searched for 2 patterns, read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 2 lines
+      183              onEvent = {}, onRevealRequested = {}, onExport = {
+           },
+      184              onOpenThreads = {},
+      185              serverUrlState = rememberTextFieldState("https://a
+           pi.gent.ino.ink"),
+      186 +            // production seeds this from settings; default ag
+          +ent name is "juno"                                            
+      187 +            agentNameState = rememberTextFieldState("juno"),  
+      188          )
+      189      }
+      190  
+
+⏺ Update(app/src/test/java/net/liquidx/leman/ui/config/ConfigViewModelTest.kt)
+  ⎿  Added 1 line
+      48              assertNotNull(awaitUntil { it.urlError != null }.ur
+          lError)
+      49  
+      50              vm.serverUrlState.type("http://insecure.example")
+      51 +            advanceUntilIdle() // editing clears the previous e
+         +rror first                                                     
+      52              vm.onEvent(ConfigEvent.SaveServerUrl)
+      53              assertNotNull(awaitUntil { it.urlError != null }.ur
+          lError) // http rejected in release
+      54  
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ Done — all green. 134 unit tests pass (including the new regression tests), 
+  the Roborazzi screenshot goldens verify pixel-identical, and the debug APK 
+  plus instrumented test sources build cleanly.
+
+  What changed
+
+  Every text field in the app now uses the TextFieldState-based BasicTextField
+  API, where the field owns its text buffer. The cursor bug is now impossible by
+  construction — nothing writes the value back into the field per keystroke, so
+  there is no async round-trip to clobber the cursor.
+
+  The components (Inputs.kt, ThreadView.kt): PromptField and Composer take a
+  TextFieldState instead of value/onValueChange, with a doc comment explaining
+  why callers must not echo text back. ⏎ submit moved from KeyboardActions to
+  the equivalent onKeyboardAction.
+
+  The two ViewModels that had the bug:
+  - ConfigViewModel now owns serverUrlState, apiKeyState, and agentNameState.
+    They're seeded once from DataStore when settings first load; agent-name
+    edits are persisted by observing the field with snapshotFlow (the pattern
+    from the official Compose docs). The
+    SetServerUrlInput/SetApiKeyInput/SetAgentName events and the mirror fields
+    in ConfigUiState are gone. Saving the URL normalizes it back into the field;
+    editing a URL that failed validation clears the error (guarded against a
+    queued edit-notification wiping a fresh error — that subtlety is what the
+    old event-based flow got for free, and it's covered by a test).
+  - NewThreadViewModel (which had the identical latent bug) owns textState;
+    Start reads it directly and the "start thread" button enables reactively off
+    the field text.
+
+  Locally-stated fields (threads filter, thread composer, debug screens) moved
+  to rememberTextFieldState — the filter forwards changes to the ViewModel via
+  snapshotFlow, and the composer still clears on send and survives rotation
+  (rememberTextFieldState saves state internally, replacing the old
+  rememberSaveable).
+
+  Tests: written first (watched them fail on the missing API, then pass). New
+  coverage includes agent-name seeding from stored settings, fast-typing
+  persistence without the field ever being rewritten (the regression that
+  started this), api-key clearing after save, and error-clearing on URL edit.
+  The one golden that differed did so because the test previously injected
+  "juno" via UiState — it now seeds the field the way production does, and the
+  goldens verify unchanged.
+
+  Two things you may want as follow-ups: I didn't commit anything, and if you
+  want a physical confirmation you can run the app on the emulator and type into
+  the agent name field — happy to do either.
+
+✻ Crunched for 49m 17s · done Thursday, Jul 16 at 11:50 AM
+
+※ recap: Fixed the agent-name cursor bug by migrating all text fields to Compose's TextFieldState API; all 134 tests, screenshot goldens, and builds pass. Next action: commit the changes, or verify typing on the emulator first if you'd like. (disable recaps in /config)
