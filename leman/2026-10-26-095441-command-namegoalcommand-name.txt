@@ -1,0 +1,1184 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Fable 5 · Claude Max
+ ▝▝   ▝▝   ~/p/liquidx-leman-android
+
+
+❯ /goal Add a new tab in the UI that lists the jobs that are sechduled, allow   
+me to make edits, delete and add jobs via the API.                              
+  ⎿  Goal set: Add a new tab in the UI that lists the jobs that are sechduled,
+     allow me to make edits, delete and add jobs via the API.
+
+⏺ Goal acknowledged: add a Jobs tab to the UI with list/add/edit/delete backed
+  by the API. Per the superpowers rule, I'll load the brainstorming skill first,
+  then dig into the codebase.
+
+⏺ Skill(superpowers:brainstorming)
+  ⎿  Successfully loaded skill
+
+  Read 1 file, listed 3 directories, ran 1 shell command, recalled 1 memory (ctrl+o to expand)
+
+⏺ jobs_admin: false in capabilities — concerning. Let me probe the likely job
+  endpoints directly before concluding.
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+⏺ Full API contract mapped. Now I'll study the app's existing patterns (client,
+  tabs, screens, ViewModels, tests) to design the Jobs tab consistently.
+
+  Searched for 1 pattern, read 11 files, listed 1 directory (ctrl+o to expand)
+
+⏺ I have the full picture. Checking available icons, then writing the design
+  doc.
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+⏺ All patterns gathered. Writing the design doc now, then implementing.
+
+⏺ Write(docs/superpowers/specs/2026-07-20-jobs-tab-design.md)
+  ⎿  Wrote 100 lines to
+     docs/superpowers/specs/2026-07-20-jobs-tab-design.md
+       1 # Jobs tab — design
+       3 2026-07-20. Goal: a third tab that lists the gateway's scheduled
+          jobs and lets the
+       4 user add, edit, and delete them via the API.
+       6 ## Server contract (verified live 2026-07-20, gateway 0.18.0)
+       7 
+         pi` prefix and bearer
+       9 auth as sessions). Note: `GET /v1/capabilities` reports `jobs_ad
+         min: false` yet the
+         pp feature-gates on a
+     … +143 lines (ctrl+o to expand)
+
+  Read 2 files, ran 3 shell commands (ctrl+o to expand)
+
+⏺ Now writing the data layer. First let me check the debug FakeHermesServer so
+  the interface change doesn't break the debug build.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Now writing the data layer across all the client implementations.
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/remote/Dto.kt)
+  ⎿  Added 53 lines
+       92      @SerialName("fcm_token") val fcmToken: String,
+       93  )
+       94  
+       95 +/**                                                           
+       96 + * `/api/jobs` — the gateway's scheduled-job store (jobs-tab d
+          +esign). Timestamps                                            
+       97 + * are ISO-8601 strings with offset, unlike sessions' float ep
+          +ochs.                                                         
+       98 + */                                                           
+       99 +@Serializable                                                 
+      100 +data class JobDto(                                            
+      101 +    val id: String,                                           
+      102 +    val name: String = "",                                    
+      103 +    val prompt: String = "",                                  
+      104 +    val schedule: JobScheduleDto? = null,                     
+      105 +    @SerialName("schedule_display") val scheduleDisplay: Strin
+          +g = "",                                                       
+      106 +    val enabled: Boolean = true,                              
+      107 +    val state: String = "scheduled",                          
+      108 +    @SerialName("created_at") val createdAt: String? = null,  
+      109 +    @SerialName("next_run_at") val nextRunAt: String? = null, 
+      110 +    @SerialName("last_run_at") val lastRunAt: String? = null, 
+      111 +    @SerialName("last_status") val lastStatus: String? = null,
+      112 +    @SerialName("last_error") val lastError: String? = null,  
+      113 +    val repeat: JobRepeatDto? = null,                         
+      114 +)                                                             
+      115 +                                                              
+      116 +/** Server-normalized form of the schedule string (`cron`/`int
+          +erval`/`at`). */                                              
+      117 +@Serializable                                                 
+      118 +data class JobScheduleDto(                                    
+      119 +    val kind: String = "",                                    
+      120 +    val expr: String? = null,                                 
+      121 +    val minutes: Int? = null,                                 
+      122 +    val display: String = "",                                 
+      123 +)                                                             
+      124 +                                                              
+      125 +@Serializable                                                 
+      126 +data class JobRepeatDto(val times: Int? = null, val completed:
+          + Int = 0)                                                     
+      127 +                                                              
+      128 +@Serializable                                                 
+      129 +data class JobListDto(val jobs: List<JobDto> = emptyList())   
+      130 +                                                              
+      131 +/** Job mutations all nest the resulting job under `job`. */  
+      132 +@Serializable                                                 
+      133 +data class JobEnvelopeDto(val job: JobDto)                    
+      134 +                                                              
+      135 +/** `schedule` is a free string the server validates: `30m`, `
+          +every 2h`, cron, ISO time. */                                 
+      136 +@Serializable                                                 
+      137 +data class JobCreateDto(val name: String, val prompt: String, 
+          +val schedule: String)                                         
+      138 +                                                              
+      139 +/** PATCH body — defaults stay unencoded so absent fields are 
+          +left untouched. */                                            
+      140 +@Serializable                                                 
+      141 +data class JobPatchDto(                                       
+      142 +    val name: String? = null,                                 
+      143 +    val prompt: String? = null,                               
+      144 +    val schedule: String? = null,                             
+      145 +    val enabled: Boolean? = null,                             
+      146 +)                                                             
+      147 +                                                              
+      148  /** GET /v1/capabilities — gate the whole Sessions feature on 
+           these flags (spec §5). */
+      149  @Serializable
+      150  data class CapabilitiesDto(
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/remote/ErrorMapping.kt)
+  ⎿  Added 8 lines, removed 1 line
+      19  /** 401/403 → Auth; 5xx and 429 → Server (retryable per 04); ot
+          her 4xx → Client. */
+      20  fun mapHttpFailure(response: Response): ApiError {
+      21      val code = response.code
+      22 +    // `/v1/*` wraps errors as {"error":{"message":…}}; `/api/j
+         +obs` uses a bare                                               
+      23 +    // {"error":"…"} string (e.g. the invalid-schedule 500 whos
+         +e message the edit                                             
+      24 +    // screen surfaces). Accept both.                          
+      25      val message = runCatching {
+      26          response.body?.string()?.let { body ->
+      24 -            HermesJson.decodeFromString(ErrorEnvelopeDto.serial
+         -izer(), body).error?.message                                   
+      27 +            when (val error = HermesJson.parseToJsonElement(bod
+         +y).jsonObject["error"]) {                                      
+      28 +                is JsonPrimitive -> error.contentOrNull        
+      29 +                is JsonObject -> HermesJson.decodeFromJsonEleme
+         +nt(ErrorBodyDto.serializer(), error).message                   
+      30 +                else -> null                                   
+      31 +            }                                                  
+      32          }
+      33      }.getOrNull()
+      34      return when {
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/remote/ErrorMapping.kt)
+  ⎿  Added 4 lines
+       4  import java.io.IOException
+       5  import java.io.InterruptedIOException
+       6  import java.net.SocketTimeoutException
+       7 +import kotlinx.serialization.json.JsonObject                   
+       8 +import kotlinx.serialization.json.JsonPrimitive                
+       9 +import kotlinx.serialization.json.contentOrNull                
+      10 +import kotlinx.serialization.json.jsonObject                   
+      11  import okhttp3.Response
+      12  
+      13  /** Everything thrown by OkHttp/serialization maps into [ApiErr
+          or] (spec 04). */
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/remote/HermesClient.kt)
+  ⎿  Added 6 lines
+      22      suspend fun renameSession(id: String, title: String): ApiRe
+          sult<Unit>
+      23      suspend fun deleteSession(id: String): ApiResult<Unit>
+      24  
+      25 +    /** Scheduled-jobs admin, `/api/jobs` (jobs-tab design). */
+      26 +    suspend fun listJobs(): ApiResult<List<JobDto>>            
+      27 +    suspend fun createJob(job: JobCreateDto): ApiResult<JobDto>
+      28 +    suspend fun updateJob(id: String, patch: JobPatchDto): ApiR
+         +esult<JobDto>                                                  
+      29 +    suspend fun deleteJob(id: String): ApiResult<Unit>         
+      30 +                                                               
+      31      /** Registers this device's FCM token so the server can pus
+          h (FCM push client). */
+      32      suspend fun registerDevice(fcmToken: String, deviceId: Stri
+          ng): ApiResult<Unit>
+      33  
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/remote/OkHttpHermesClient.kt)
+  ⎿  Added 30 lines
+      149          return execute(t.rest, t.request("api/sessions/$id").d
+           elete().build()) { }
+      150      }
+      151  
+      152 +    override suspend fun listJobs(): ApiResult<List<JobDto>> {
+      153 +        val t = transport ?: return ApiResult.Err(ApiError.Not
+          +Configured)                                                   
+      154 +        return execute(t.rest, t.request("api/jobs").get().bui
+          +ld()) {                                                       
+      155 +            HermesJson.decodeFromString(JobListDto.serializer(
+          +), it).jobs                                                   
+      156 +        }                                                     
+      157 +    }                                                         
+      158 +                                                              
+      159 +    override suspend fun createJob(job: JobCreateDto): ApiResu
+          +lt<JobDto> {                                                  
+      160 +        val t = transport ?: return ApiResult.Err(ApiError.Not
+          +Configured)                                                   
+      161 +        val body = HermesJson.encodeToString(JobCreateDto.seri
+          +alizer(), job)                                                
+      162 +        val request = t.request("api/jobs").post(body.toReques
+          +tBody(jsonMediaType)).build()                                 
+      163 +        return execute(t.rest, request) {                     
+      164 +            HermesJson.decodeFromString(JobEnvelopeDto.seriali
+          +zer(), it).job                                                
+      165 +        }                                                     
+      166 +    }                                                         
+      167 +                                                              
+      168 +    override suspend fun updateJob(id: String, patch: JobPatch
+          +Dto): ApiResult<JobDto> {                                     
+      169 +        val t = transport ?: return ApiResult.Err(ApiError.Not
+          +Configured)                                                   
+      170 +        val body = HermesJson.encodeToString(JobPatchDto.seria
+          +lizer(), patch)                                               
+      171 +        val request = t.request("api/jobs/$id").patch(body.toR
+          +equestBody(jsonMediaType)).build()                            
+      172 +        return execute(t.rest, request) {                     
+      173 +            HermesJson.decodeFromString(JobEnvelopeDto.seriali
+          +zer(), it).job                                                
+      174 +        }                                                     
+      175 +    }                                                         
+      176 +                                                              
+      177 +    override suspend fun deleteJob(id: String): ApiResult<Unit
+          +> {                                                           
+      178 +        val t = transport ?: return ApiResult.Err(ApiError.Not
+          +Configured)                                                   
+      179 +        return execute(t.rest, t.request("api/jobs/$id").delet
+          +e().build()) { }                                              
+      180 +    }                                                         
+      181 +                                                              
+      182      // The notification bridge is fronted by Caddy on the gate
+           way's own origin under
+      183      // /notify/* (bridge protocol.md), so it shares the config
+           ured server url.
+      184      override suspend fun registerDevice(fcmToken: String, devi
+           ceId: String): ApiResult<Unit> {
+
+⏺ Update(app/src/test/java/net/liquidx/leman/testutil/FakeHermesClient.kt)
+  ⎿  Added 3 lines
+       5  import net.liquidx.leman.data.remote.CapabilitiesDto
+       6  import net.liquidx.leman.data.remote.HealthDto
+       7  import net.liquidx.leman.data.remote.HermesClient
+       8 +import net.liquidx.leman.data.remote.JobCreateDto              
+       9 +import net.liquidx.leman.data.remote.JobDto                    
+      10 +import net.liquidx.leman.data.remote.JobPatchDto               
+      11  import net.liquidx.leman.data.remote.SessionDto
+      12  import net.liquidx.leman.data.remote.SessionListDto
+      13  import net.liquidx.leman.data.remote.SessionMessageDto
+
+⏺ Update(app/src/test/java/net/liquidx/leman/testutil/FakeHermesClient.kt)
+  ⎿  Added 30 lines
+       92          return deleteSessionResult
+       93      }
+       94  
+       95 +    var listJobsResult: ApiResult<List<JobDto>> = ApiResult.Ok
+          +(emptyList())                                                 
+       96 +    var createJobResult: ApiResult<JobDto> = ApiResult.Ok(JobD
+          +to(id = "job1"))                                              
+       97 +    var updateJobResult: ApiResult<JobDto> = ApiResult.Ok(JobD
+          +to(id = "job1"))                                              
+       98 +    var deleteJobResult: ApiResult<Unit> = ApiResult.Ok(Unit) 
+       99 +                                                              
+      100 +    var listJobsCalls = 0                                     
+      101 +    val createJobCalls = mutableListOf<JobCreateDto>()        
+      102 +    val updateJobCalls = mutableListOf<Pair<String, JobPatchDt
+          +o>>()                                                         
+      103 +    val deleteJobCalls = mutableListOf<String>()              
+      104 +                                                              
+      105 +    override suspend fun listJobs(): ApiResult<List<JobDto>> {
+      106 +        listJobsCalls++                                       
+      107 +        return listJobsResult                                 
+      108 +    }                                                         
+      109 +                                                              
+      110 +    override suspend fun createJob(job: JobCreateDto): ApiResu
+          +lt<JobDto> {                                                  
+      111 +        createJobCalls += job                                 
+      112 +        return createJobResult                                
+      113 +    }                                                         
+      114 +                                                              
+      115 +    override suspend fun updateJob(id: String, patch: JobPatch
+          +Dto): ApiResult<JobDto> {                                     
+      116 +        updateJobCalls += id to patch                         
+      117 +        return updateJobResult                                
+      118 +    }                                                         
+      119 +                                                              
+      120 +    override suspend fun deleteJob(id: String): ApiResult<Unit
+          +> {                                                           
+      121 +        deleteJobCalls += id                                  
+      122 +        return deleteJobResult                                
+      123 +    }                                                         
+      124 +                                                              
+      125      val registerDeviceCalls = mutableListOf<Pair<String, Strin
+           g>>()
+      126      var registerDeviceResult: ApiResult<Unit> = ApiResult.Ok(U
+           nit)
+      127  
+
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/FakeHermesServer.kt)
+  ⎿  Added 4 lines
+      14  import net.liquidx.leman.data.remote.HealthDto
+      15  import net.liquidx.leman.data.remote.HermesClient
+      16  import net.liquidx.leman.data.remote.HermesStreamException
+      17 +import net.liquidx.leman.data.remote.JobCreateDto              
+      18 +import net.liquidx.leman.data.remote.JobDto                    
+      19 +import net.liquidx.leman.data.remote.JobPatchDto               
+      20 +import net.liquidx.leman.data.remote.JobScheduleDto            
+      21  import net.liquidx.leman.data.remote.SessionDto
+      22  import net.liquidx.leman.data.remote.SessionListDto
+      23  import net.liquidx.leman.data.remote.SessionMessageDto
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/FakeHermesServer.kt)
+  ⎿  Added 62 lines
+      182  
+      183      override suspend fun unregisterDevice(deviceId: String): A
+           piResult<Unit> = ApiResult.Ok(Unit)
+      184  
+      185 +    private val jobs = ConcurrentHashMap<String, JobDto>().app
+          +ly {                                                          
+      186 +        put(                                                  
+      187 +            "fakejob000001",                                  
+      188 +            JobDto(                                           
+      189 +                id = "fakejob000001",                         
+      190 +                name = "daily digest",                        
+      191 +                prompt = "summarize the day's email",         
+      192 +                schedule = JobScheduleDto(kind = "cron", expr 
+          += "0 7 * * *", display = "0 7 * * *"),                        
+      193 +                scheduleDisplay = "0 7 * * *",                
+      194 +                nextRunAt = "2026-07-21T07:00:00+09:00",      
+      195 +                lastRunAt = "2026-07-20T07:00:58+09:00",      
+      196 +                lastStatus = "ok",                            
+      197 +            ),                                                
+      198 +        )                                                     
+      199 +        put(                                                  
+      200 +            "fakejob000002",                                  
+      201 +            JobDto(                                           
+      202 +                id = "fakejob000002",                         
+      203 +                name = "hourly check",                        
+      204 +                prompt = "check the monitors",                
+      205 +                schedule = JobScheduleDto(kind = "interval", m
+          +inutes = 60, display = "every 60m"),                          
+      206 +                scheduleDisplay = "every 60m",                
+      207 +                enabled = false,                              
+      208 +                state = "paused",                             
+      209 +                lastStatus = "error",                         
+      210 +                lastError = "tool timeout",                   
+      211 +            ),                                                
+      212 +        )                                                     
+      213 +    }                                                         
+      214 +    private val jobCounter = AtomicInteger(2)                 
+      215 +                                                              
+      216 +    override suspend fun listJobs(): ApiResult<List<JobDto>> =
+          + ApiResult.Ok(jobs.values.sortedBy { it.name })               
+      217 +                                                              
+      218 +    override suspend fun createJob(job: JobCreateDto): ApiResu
+          +lt<JobDto> {                                                  
+      219 +        if (job.name.isBlank()) return ApiResult.Err(ApiError.
+          +Client(400, "Name is required"))                              
+      220 +        val id = "fakejob%06d".format(jobCounter.incrementAndG
+          +et())                                                         
+      221 +        val dto = JobDto(                                     
+      222 +            id = id,                                          
+      223 +            name = job.name,                                  
+      224 +            prompt = job.prompt,                              
+      225 +            schedule = JobScheduleDto(kind = "cron", expr = jo
+          +b.schedule, display = job.schedule),                          
+      226 +            scheduleDisplay = job.schedule,                   
+      227 +        )                                                     
+      228 +        jobs[id] = dto                                        
+      229 +        return ApiResult.Ok(dto)                              
+      230 +    }                                                         
+      231 +                                                              
+      232 +    override suspend fun updateJob(id: String, patch: JobPatch
+          +Dto): ApiResult<JobDto> {                                     
+      233 +        val current = jobs[id] ?: return ApiResult.Err(ApiErro
+          +r.Client(404, "Job not found"))                               
+      234 +        val updated = current.copy(                           
+      235 +            name = patch.name ?: current.name,                
+      236 +            prompt = patch.prompt ?: current.prompt,          
+      237 +            scheduleDisplay = patch.schedule ?: current.schedu
+          +leDisplay,                                                    
+      238 +            enabled = patch.enabled ?: current.enabled,       
+      239 +        )                                                     
+      240 +        jobs[id] = updated                                    
+      241 +        return ApiResult.Ok(updated)                          
+      242 +    }                                                         
+      243 +                                                              
+      244 +    override suspend fun deleteJob(id: String): ApiResult<Unit
+          +> =                                                           
+      245 +        if (jobs.remove(id) != null) ApiResult.Ok(Unit) else A
+          +piResult.Err(ApiError.Client(404, "Job not found"))           
+      246 +                                                              
+      247      /**
+      248       * Translates [scriptFor]'s run-vocabulary events into the
+            chat vocabulary:
+      249       * `run.started` first, deltas/tool events unchanged (with
+            Streaming's
+
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/FakeHermesServer.kt)
+  ⎿  Added 4 lines
+      379      override suspend fun createSession() = active.createSessio
+           n()
+      380      override suspend fun renameSession(id: String, title: Stri
+           ng) = active.renameSession(id, title)
+      381      override suspend fun deleteSession(id: String) = active.de
+           leteSession(id)
+      382 +    override suspend fun listJobs() = active.listJobs()       
+      383 +    override suspend fun createJob(job: JobCreateDto) = active
+          +.createJob(job)                                               
+      384 +    override suspend fun updateJob(id: String, patch: JobPatch
+          +Dto) = active.updateJob(id, patch)                            
+      385 +    override suspend fun deleteJob(id: String) = active.delete
+          +Job(id)                                                       
+      386      override suspend fun registerDevice(fcmToken: String, devi
+           ceId: String) = real.registerDevice(fcmToken, deviceId)
+      387      override suspend fun unregisterDevice(deviceId: String) = 
+           real.unregisterDevice(deviceId)
+      388  
+
+⏺ Now the wire fixture and data-layer tests.
+
+⏺ Write(app/src/test/resources/fixtures/wire/jobs.json)
+  ⎿  Wrote 62 lines to app/src/test/resources/fixtures/wire/jobs.json
+       1 {
+       2   "jobs": [
+       3     {
+       4       "id": "c526238e14c7",
+       5       "name": "Techmeme Daily Headlines",
+         roundup.",
+       7       "skills": [],
+       8       "skill": null,
+       9       "model": null,
+      10       "provider": null,
+     … +56 lines (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/remote/DtoTest.kt)
+  ⎿  Added 33 lines
+      43      }
+      44  
+      45      @Test
+      46 +    fun jobList_decodesFixture_ignoringUnknownFields() {       
+      47 +        val dto = HermesJson.decodeFromString(JobListDto.serial
+         +izer(), Fixtures.load("wire/jobs.json"))                       
+      48 +        assertEquals(2, dto.jobs.size)                         
+      49 +        val cron = dto.jobs[0]                                 
+      50 +        assertEquals("c526238e14c7", cron.id)                  
+      51 +        assertEquals("Techmeme Daily Headlines", cron.name)    
+      52 +        assertEquals("0 7 * * *", cron.scheduleDisplay)        
+      53 +        assertEquals("cron", cron.schedule?.kind)              
+      54 +        assertTrue(cron.enabled)                               
+      55 +        assertEquals("2026-07-21T07:00:00+09:00", cron.nextRunA
+         +t)                                                             
+      56 +        assertEquals("ok", cron.lastStatus)                    
+      57 +        assertEquals(71, cron.repeat?.completed)               
+      58 +        val paused = dto.jobs[1]                               
+      59 +        assertFalse(paused.enabled)                            
+      60 +        assertEquals("paused", paused.state)                   
+      61 +        assertEquals(120, paused.schedule?.minutes)            
+      62 +        assertEquals("tool timeout", paused.lastError)         
+      63 +        assertEquals(null, paused.nextRunAt)                   
+      64 +    }                                                          
+      65 +                                                               
+      66 +    @Test                                                      
+      67 +    fun jobPatch_encodesOnlySetFields() {                      
+      68 +        assertEquals(                                          
+      69 +            """{"enabled":false}""",                           
+      70 +            HermesJson.encodeToString(JobPatchDto.serializer(),
+         + JobPatchDto(enabled = false)),                                
+      71 +        )                                                      
+      72 +        assertEquals(                                          
+      73 +            """{"name":"n","schedule":"every 2h"}""",          
+      74 +            HermesJson.encodeToString(JobPatchDto.serializer(),
+         + JobPatchDto(name = "n", schedule = "every 2h")),              
+      75 +        )                                                      
+      76 +    }                                                          
+      77 +                                                               
+      78 +    @Test                                                      
+      79      fun sessionEnvelope_decodes_createResponse() {
+      80          val json = """{"object":"hermes.session","session":{"id
+          ":"api_1_a","source":"api_server","started_at":1.0}}"""
+      81          assertEquals("api_1_a", HermesJson.decodeFromString(Ses
+          sionEnvelopeDto.serializer(), json).session.id)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/remote/OkHttpHermesClientTest.
+        kt)
+  ⎿  Added 56 lines
+      173      }
+      174  
+      175      @Test
+      176 +    fun listJobs_getsAndUnwraps() = runTest {                 
+      177 +        server.enqueue(MockResponse().setBody(Fixtures.load("w
+          +ire/jobs.json")))                                             
+      178 +        val result = client.listJobs() as ApiResult.Ok        
+      179 +        assertEquals(listOf("c526238e14c7", "fc50f3d48141"), r
+          +esult.value.map { it.id })                                    
+      180 +        val req = server.takeRequest()                        
+      181 +        assertEquals("GET", req.method)                       
+      182 +        assertEquals("/api/jobs", req.path)                   
+      183 +        assertEquals("Bearer testkey", req.getHeader("Authoriz
+          +ation"))                                                      
+      184 +    }                                                         
+      185 +                                                              
+      186 +    @Test                                                     
+      187 +    fun createJob_postsContract_unwrapsEnvelope() = runTest { 
+      188 +        server.enqueue(MockResponse().setBody(                
+      189 +            """{"job":{"id":"3121d2d43d3f","name":"probe","pro
+          +mpt":"say hi","schedule_display":"0 5 1 1 *"}}""",            
+      190 +        ))                                                    
+      191 +        val result = client.createJob(JobCreateDto("probe", "s
+          +ay hi", "0 5 1 1 *")) as ApiResult.Ok                         
+      192 +        assertEquals("3121d2d43d3f", result.value.id)         
+      193 +        val req = server.takeRequest()                        
+      194 +        assertEquals("POST", req.method)                      
+      195 +        assertEquals("/api/jobs", req.path)                   
+      196 +        assertEquals("""{"name":"probe","prompt":"say hi","sch
+          +edule":"0 5 1 1 *"}""", req.body.readUtf8())                  
+      197 +    }                                                         
+      198 +                                                              
+      199 +    @Test                                                     
+      200 +    fun updateJob_patchesOnlySetFields() = runTest {          
+      201 +        server.enqueue(MockResponse().setBody("""{"job":{"id":
+          +"3121d2d43d3f","enabled":false}}"""))                         
+      202 +        val result = client.updateJob("3121d2d43d3f", JobPatch
+          +Dto(enabled = false)) as ApiResult.Ok                         
+      203 +        assertEquals(false, result.value.enabled)             
+      204 +        val req = server.takeRequest()                        
+      205 +        assertEquals("PATCH", req.method)                     
+      206 +        assertEquals("/api/jobs/3121d2d43d3f", req.path)      
+      207 +        assertEquals("""{"enabled":false}""", req.body.readUtf
+          +8())                                                          
+      208 +    }                                                         
+      209 +                                                              
+      210 +    @Test                                                     
+      211 +    fun deleteJob_deletes() = runTest {                       
+      212 +        server.enqueue(MockResponse().setBody("""{"ok":true}""
+          +"))                                                           
+      213 +        assertTrue(client.deleteJob("3121d2d43d3f") is ApiResu
+          +lt.Ok)                                                        
+      214 +        val req = server.takeRequest()                        
+      215 +        assertEquals("DELETE", req.method)                    
+      216 +        assertEquals("/api/jobs/3121d2d43d3f", req.path)      
+      217 +    }                                                         
+      218 +                                                              
+      219 +    @Test                                                     
+      220 +    fun jobsErrorMapping_stringErrorBody_surfacesMessage() = r
+          +unTest {                                                      
+      221 +        // /api/jobs errors are {"error":"…"} strings, not the
+          + /v1 object envelope;                                         
+      222 +        // the invalid-schedule 500 carries usage text the edi
+          +t screen shows inline.                                        
+      223 +        server.enqueue(MockResponse().setResponseCode(500).set
+          +Body(                                                         
+      224 +            """{"error":"Invalid schedule 'x'. Use:\n  - Cron:
+          + '0 9 * * *'"}""",                                            
+      225 +        ))                                                    
+      226 +        val error = client.updateJob("3121d2d43d3f", JobPatchD
+          +to(schedule = "x")).errorOrNull() as ApiError.Server          
+      227 +        assertEquals(500, error.code)                         
+      228 +        assertTrue(error.message!!.startsWith("Invalid schedul
+          +e"))                                                          
+      229 +    }                                                         
+      230 +                                                              
+      231 +    @Test                                                     
+      232      fun registerDevice_postsContract() = runTest {
+      233          server.enqueue(MockResponse().setBody("{}"))
+      234          assertTrue(client.registerDevice("tok123", "dev-uuid")
+            is ApiResult.Ok)
+
+  Listed 1 directory, ran 1 shell command (ctrl+o to expand)
+
+⏺ Data layer green (24 client tests, 0 failures). Moving to the domain model +
+  repository.
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/Job.kt)
+  ⎿  Wrote 21 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/Job.kt
+       1 package net.liquidx.leman.domain.model
+       2 
+       3 /**
+         em of record;
+       5  * `id` IS the server job id. Timestamps are epoch millis, parse
+         d from the
+       6  * wire's ISO-8601 strings; null when absent or unparseable.
+       8 data class Job(
+       9     val id: String,
+      10     val name: String,
+     … +14 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/repo/JobsRepository.kt)
+  ⎿  Wrote 112 lines to
+     app/src/main/java/net/liquidx/leman/data/repo/JobsRepository.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import java.time.OffsetDateTime
+       4 import kotlinx.coroutines.flow.MutableStateFlow
+       5 import kotlinx.coroutines.flow.StateFlow
+       6 import kotlinx.coroutines.flow.update
+       7 import net.liquidx.leman.data.remote.HermesClient
+       8 import net.liquidx.leman.data.remote.JobCreateDto
+       9 import net.liquidx.leman.data.remote.JobDto
+      10 import net.liquidx.leman.data.remote.JobPatchDto
+     … +127 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/di/AppContainer.kt)
+  ⎿  Added 7 lines
+      127          )
+      128      }
+      129  
+      130 +    val jobsRepository: JobsRepository by lazy {              
+      131 +        JobsRepository(                                       
+      132 +            client = hermesClient,                            
+      133 +            onAuthFailure = { code -> connectionManager.onAuth
+          +Failure(code) },                                              
+      134 +        )                                                     
+      135 +    }                                                         
+      136 +                                                              
+      137      val syncScheduler: SyncScheduler by lazy {
+      138          SyncScheduler(
+      139              syncNow = {
+
+⏺ Update(app/src/main/java/net/liquidx/leman/di/AppContainer.kt)
+  ⎿  Added 1 line
+      12  import net.liquidx.leman.data.remote.HermesClient
+      13  import net.liquidx.leman.data.remote.OkHttpHermesClient
+      14  import net.liquidx.leman.data.repo.ConnectionManager
+      15 +import net.liquidx.leman.data.repo.JobsRepository              
+      16  import net.liquidx.leman.data.repo.SyncScheduler
+      17  import net.liquidx.leman.data.repo.ThreadRepository
+      18  import net.liquidx.leman.data.settings.ApiKeyStore
+
+⏺ Now the repository tests.
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/repo/JobsRepositoryTest.kt)
+  ⎿  Wrote 146 lines to
+     app/src/test/java/net/liquidx/leman/data/repo/JobsRepositoryTest.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import kotlinx.coroutines.test.runTest
+       4 import net.liquidx.leman.data.remote.JobDto
+       5 import net.liquidx.leman.data.remote.JobRepeatDto
+       6 import net.liquidx.leman.domain.model.ApiError
+       7 import net.liquidx.leman.domain.model.ApiResult
+       8 import net.liquidx.leman.testutil.FakeHermesClient
+       9 import org.junit.Assert.assertEquals
+      10 import org.junit.Assert.assertFalse
+     … +151 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ The parser output differs from my hand-computed epoch by exactly one day —
+  verifying which is right with an independent calculation:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/repo/JobsRepositoryTest.kt)
+  ⎿  Added 1 line, removed 1 line
+      36          assertNull(state.refreshError)
+      37          assertEquals(listOf("a", "b"), state.jobs.map { it.id }
+          )
+      38          // 2026-07-21T07:00:00+09:00 == 2026-07-20T22:00:00Z
+      39 -        assertEquals(1784671200000L, state.jobs[0].nextRunAt)  
+      39 +        assertEquals(1784584800000L, state.jobs[0].nextRunAt)  
+      40          assertEquals(3, state.jobs[0].runsCompleted)
+      41      }
+      42  
+
+  Read 2 files, ran 1 shell command (ctrl+o to expand)
+
+⏺ Now building the UI. Let me check the ViewModel patterns for text fields and
+  the test harness first.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/icons/TablerIcons.kt)
+  ⎿  Added 10 lines, removed 1 line
+       9  import androidx.compose.ui.unit.dp
+      10  
+      11  /**
+      12 - * Exactly two Tabler icons (MIT), tab bar only (spec 06): 24dp
+         - viewport,                                                     
+      12 + * A handful of Tabler icons (MIT), tab bar only (spec 06): 24d
+         +p viewport,                                                    
+      13   * stroke 1.5, butt caps, miter joins, drawn at 16dp. License n
+          ote in NOTICE.
+      14   */
+      15  object TablerIcons {
+      16 +    /** Jobs tab — Tabler "clock". */                          
+      17 +    val Clock: ImageVector by lazy {                           
+      18 +        tablerIcon(                                            
+      19 +            "TablerClock",                                     
+      20 +            "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0",            
+      21 +            "M12 7v5l3 3",                                     
+      22 +        )                                                      
+      23 +    }                                                          
+      24 +                                                               
+      25      val Message: ImageVector by lazy {
+      26          tablerIcon(
+      27              "TablerMessage",
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Chrome.kt)
+  ⎿  Added 1 line
+      112  )
+      113  
+      114  val ThreadsTab = LemanTab("threads", "threads", TablerIcons.Me
+           ssage)
+      115 +val JobsTab = LemanTab("jobs", "jobs", TablerIcons.Clock)     
+      116  val ConfigTab = LemanTab("config", "config", TablerIcons.Setti
+           ngs)
+      117  
+      118  /** Tab bar (spec 06): 16dp Tabler icon + 9sp label; active = 
+           accent + 2dp top rule. */
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/format/TimeFormat.kt)
+  ⎿  Added 8 lines
+      39  
+      40      fun monthDay(epochMillis: Long, zone: ZoneId): String =
+      41          monthDayFormat.format(Instant.ofEpochMilli(epochMillis)
+          .atZone(zone)).lowercase(Locale.ROOT)
+      42 +                                                               
+      43 +    /** Future-facing (jobs' next run): `HH:mm` on today's loca
+         +l date, else `jul 21 07:00`. */                                
+      44 +    fun upcomingLabel(epochMillis: Long, nowMillis: Long, zone:
+         + ZoneId): String {                                             
+      45 +        val day = LocalDate.ofInstant(Instant.ofEpochMilli(epoc
+         +hMillis), zone)                                                
+      46 +        val today = LocalDate.ofInstant(Instant.ofEpochMilli(no
+         +wMillis), zone)                                                
+      47 +        val time = clock(epochMillis, zone)                    
+      48 +        return if (day == today) time else "${monthDay(epochMil
+         +lis, zone)} $time"                                             
+      49 +    }                                                          
+      50  }
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/jobs/JobsViewModel.kt)  ⎿  Wrote 92 lines to
+     app/src/main/java/net/liquidx/leman/ui/jobs/JobsViewModel.kt
+       1 package net.liquidx.leman.ui.jobs
+       2 
+       3 import androidx.lifecycle.ViewModel
+       4 import androidx.lifecycle.viewModelScope
+       5 import java.time.ZoneId
+       6 import kotlinx.coroutines.flow.SharingStarted
+       7 import kotlinx.coroutines.flow.StateFlow
+       8 import kotlinx.coroutines.flow.combine
+       9 import kotlinx.coroutines.flow.stateIn
+      10 import kotlinx.coroutines.launch
+     … +87 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/jobs/JobsScreen.kt)
+  ⎿  Wrote 184 lines to
+     app/src/main/java/net/liquidx/leman/ui/jobs/JobsScreen.kt
+       1 package net.liquidx.leman.ui.jobs
+       2 
+       3 import androidx.compose.foundation.clickable
+       4 import androidx.compose.foundation.layout.Box
+       5 import androidx.compose.foundation.layout.Column
+       7 import androidx.compose.foundation.layout.fillMaxWidth
+       8 import androidx.compose.foundation.layout.padding
+       9 import androidx.compose.foundation.lazy.LazyColumn
+      10 import androidx.compose.foundation.text.input.rememberTextFieldS
+         tate
+     … +184 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/jobs/JobEditViewModel.kt)
+  ⎿  Wrote 141 lines to
+     app/src/main/java/net/liquidx/leman/ui/jobs/JobEditViewModel.kt
+       1 package net.liquidx.leman.ui.jobs
+       2 
+       3 import androidx.compose.foundation.text.input.TextFieldState
+       4 import androidx.compose.foundation.text.input.setTextAndPlaceCur
+         sorAtEnd
+       6 import androidx.lifecycle.viewModelScope
+       7 import kotlinx.coroutines.flow.MutableSharedFlow
+       8 import kotlinx.coroutines.flow.MutableStateFlow
+       9 import kotlinx.coroutines.flow.SharedFlow
+      10 import kotlinx.coroutines.flow.StateFlow
+     … +151 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/jobs/JobEditScreen.kt)
+  ⎿  Wrote 197 lines to
+     app/src/main/java/net/liquidx/leman/ui/jobs/JobEditScreen.kt
+       1 package net.liquidx.leman.ui.jobs
+       2 
+       3 import androidx.compose.foundation.background
+       4 import androidx.compose.foundation.clickable
+       5 import androidx.compose.foundation.layout.Box
+       6 import androidx.compose.foundation.layout.Column
+       7 import androidx.compose.foundation.layout.Row
+       8 import androidx.compose.foundation.layout.defaultMinSize
+       9 import androidx.compose.foundation.layout.fillMaxWidth
+      10 import androidx.compose.foundation.layout.padding
+     … +201 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/jobs/JobEditScreen.kt)
+  ⎿  Added 1 line, removed 4 lines
+      183      }
+      184  }
+      185  
+      186 -private val fieldLabelStyle                                   
+      187 -    @Composable get() = LemanType.label                       
+      188 -                                                              
+      186  @Composable
+      187  private fun FieldLabel(text: String) {
+      188      Text(
+      189          text.uppercase(),
+      193 -        style = fieldLabelStyle,                              
+      190 +        style = LemanType.label,                              
+      191          color = LemanColors.textFaint,
+      192          modifier = Modifier.padding(top = 14.dp, bottom = 6.dp
+           ),
+      193      )
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 4 lines
+      48      const val THREADS = "threads"
+      49      const val THREAD = "thread/{threadId}"
+      50      const val NEW_THREAD = "newThread"
+      51 +    const val JOBS = "jobs"                                    
+      52 +    const val JOB_EDIT = "job/{jobId}"                         
+      53 +    const val NEW_JOB = "newJob"                               
+      54      const val CONFIG = "config"
+      55  
+      56      fun thread(id: String) = "thread/$id"
+      57 +    fun jobEdit(id: String) = "job/$id"                        
+      58  }
+      59  
+      60  /** Live "HH:mm" for the status row, updating each minute. */
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 1 line, removed 1 line
+      81      val clock = rememberWallClock()
+      82      val context = LocalContext.current
+      83      val tabs = remember(container) {
+      84 -        listOf(ThreadsTab, ConfigTab) + container.debugHooks?.e
+         -xtraTabs.orEmpty()                                             
+      84 +        listOf(ThreadsTab, JobsTab, ConfigTab) + container.debu
+         +gHooks?.extraTabs.orEmpty()                                    
+      85      }
+      86      val fade = tween<Float>(net.liquidx.leman.ui.theme.LemanMot
+          ion.screenFadeMillis)
+      87  
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 5 lines
+      32  import net.liquidx.leman.BuildConfig
+      33  import net.liquidx.leman.di.AppContainer
+      34  import net.liquidx.leman.ui.components.ConfigTab
+      35 +import net.liquidx.leman.ui.components.JobsTab                 
+      36  import net.liquidx.leman.ui.components.LemanTab
+      37  import net.liquidx.leman.ui.components.ThreadsTab
+      38  import net.liquidx.leman.ui.config.ConfigScreen
+      39  import net.liquidx.leman.ui.config.ConfigViewModel
+      40  import net.liquidx.leman.ui.format.TimeFormat
+      41 +import net.liquidx.leman.ui.jobs.JobEditScreen                 
+      42 +import net.liquidx.leman.ui.jobs.JobEditViewModel              
+      43 +import net.liquidx.leman.ui.jobs.JobsScreen                    
+      44 +import net.liquidx.leman.ui.jobs.JobsViewModel                 
+      45  import net.liquidx.leman.ui.newthread.NewThreadScreen
+      46  import net.liquidx.leman.ui.newthread.NewThreadViewModel
+      47  import net.liquidx.leman.ui.thread.ThreadScreen
+
+⏺ Now the nav destinations themselves:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 29 lines
+      176              )
+      177          }
+      178  
+      179 +        composable(Routes.JOBS) {                             
+      180 +            val vm: JobsViewModel = viewModel(                
+      181 +                factory = viewModelFactory {                  
+      182 +                    initializer { JobsViewModel(container.jobs
+          +Repository, container.connectionManager) }                    
+      183 +                },                                            
+      184 +            )                                                 
+      185 +            val state by vm.state.collectAsStateWithLifecycle(
+          +)                                                             
+      186 +            JobsScreen(                                       
+      187 +                state = state,                                
+      188 +                clock = clock,                                
+      189 +                tabs = tabs,                                  
+      190 +                onEvent = vm::onEvent,                        
+      191 +                onOpenJob = { navController.navigate(Routes.jo
+          +bEdit(it)) },                                                 
+      192 +                onNewJob = { navController.navigate(Routes.NEW
+          +_JOB) },                                                      
+      193 +                onOpenThreads = { navController.navigate(Route
+          +s.THREADS) { launchSingleTop = true } },                      
+      194 +                onOpenConfig = { navController.navigate(Routes
+          +.CONFIG) { launchSingleTop = true } },                        
+      195 +                onSelectTab = { tab -> navController.navigate(
+          +tab.id) { launchSingleTop = true } },                         
+      196 +            )                                                 
+      197 +        }                                                     
+      198 +                                                              
+      199 +        composable(Routes.JOB_EDIT) { entry ->                
+      200 +            val jobId = entry.arguments?.getString("jobId") ?:
+          + return@composable                                            
+      201 +            JobEditDestination(container, navController, clock
+          +, jobId)                                                      
+      202 +        }                                                     
+      203 +                                                              
+      204 +        composable(Routes.NEW_JOB) {                          
+      205 +            JobEditDestination(container, navController, clock
+          +, jobId = null)                                               
+      206 +        }                                                     
+      207 +                                                              
+      208          composable(Routes.CONFIG) {
+      209              val vm: ConfigViewModel = viewModel(
+      210                  factory = viewModelFactory {
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 30 lines
+      304      }
+      305  }
+      306  
+      307 +@Composable                                                   
+      308 +private fun JobEditDestination(                               
+      309 +    container: AppContainer,                                  
+      310 +    navController: NavHostController,                         
+      311 +    clock: String,                                            
+      312 +    jobId: String?,                                           
+      313 +) {                                                           
+      314 +    val vm: JobEditViewModel = viewModel(                     
+      315 +        key = "job-${jobId ?: "new"}",                        
+      316 +        factory = viewModelFactory {                          
+      317 +            initializer { JobEditViewModel(container.jobsRepos
+          +itory, jobId) }                                               
+      318 +        },                                                    
+      319 +    )                                                         
+      320 +    val state by vm.state.collectAsStateWithLifecycle()       
+      321 +    val connState by container.connectionManager.state.collect
+          +AsState()                                                     
+      322 +    LaunchedEffect(vm) {                                      
+      323 +        vm.done.collect { navController.popBackStack() }      
+      324 +    }                                                         
+      325 +    JobEditScreen(                                            
+      326 +        state = state,                                        
+      327 +        clock = clock,                                        
+      328 +        connState = connState,                                
+      329 +        onEvent = vm::onEvent,                                
+      330 +        onCancel = { navController.popBackStack() },          
+      331 +        nameState = vm.nameState,                             
+      332 +        scheduleState = vm.scheduleState,                     
+      333 +        promptState = vm.promptState,                         
+      334 +    )                                                         
+      335 +}                                                             
+      336 +                                                              
+      337  private fun enqueueRegister(context: android.content.Context) 
+           {
+      338      val workManager = androidx.work.WorkManager.getInstance(co
+           ntext)
+      339      // "register-device" and "unregister-device" are different
+            unique-work names, so a
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Compiles clean. Now the ViewModel tests — checking the existing VM test style
+  first.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/jobs/JobsViewModelTest.kt)
+  ⎿  Wrote 87 lines to
+     app/src/test/java/net/liquidx/leman/ui/jobs/JobsViewModelTest.kt
+       1 package net.liquidx.leman.ui.jobs
+       2 
+       3 import java.time.ZoneId
+       4 import kotlinx.coroutines.test.advanceUntilIdle
+       5 import kotlinx.coroutines.test.runTest
+       6 import net.liquidx.leman.data.remote.JobDto
+       7 import net.liquidx.leman.data.repo.JobsRepository
+       8 import net.liquidx.leman.domain.model.ApiError
+       9 import net.liquidx.leman.domain.model.ApiResult
+      10 import net.liquidx.leman.testutil.MainDispatcherRule
+     … +86 lines (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/ui/jobs/JobsViewModelTest.kt)
+  ⎿  Added 2 lines, removed 1 line
+      57          val (digest, paused, broken) = state.items
+      58          assertEquals("scheduled", digest.stateLabel)
+      59          assertEquals(JobTone.Accent, digest.tone)
+      60 -        assertEquals("jul 21 07:00", digest.nextRunLabel) // +0
+         -9:00 rendered in UTC → different local day? no: instant is jul 
+         -20 22:00 UTC, today                                            
+      60 +        // Instant is 22:00Z; the VM renders in UTC where that'
+         +s still "today" → bare time.                                   
+      61 +        assertEquals("22:00", digest.nextRunLabel)             
+      62          assertEquals("paused", paused.stateLabel)
+      63          assertEquals(JobTone.Faint, paused.tone)
+      64          assertNull(paused.nextRunLabel)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/jobs/JobEditViewModelTest.kt)
+  ⎿  Wrote 156 lines to
+     app/src/test/java/net/liquidx/leman/ui/jobs/JobEditViewModelTest.kt
+       1 package net.liquidx.leman.ui.jobs
+       2 
+       3 import app.cash.turbine.test
+       4 import kotlinx.coroutines.test.advanceUntilIdle
+       5 import kotlinx.coroutines.test.runTest
+       6 import net.liquidx.leman.data.remote.JobDto
+       7 import net.liquidx.leman.data.repo.JobsRepository
+       8 import net.liquidx.leman.domain.model.ApiError
+       9 import net.liquidx.leman.domain.model.ApiResult
+      10 import net.liquidx.leman.testutil.FakeHermesClient
+     … +151 lines (ctrl+o to expand)
+
+  Read 1 file, ran 5 shell commands (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 1 line
+      16  import net.liquidx.leman.data.remote.Fixtures
+      17  import net.liquidx.leman.domain.model.ConnState
+      18  import net.liquidx.leman.ui.components.ConfigTab
+      19 +import net.liquidx.leman.ui.components.JobsTab                 
+      20  import net.liquidx.leman.ui.components.ThreadsTab
+      21  import net.liquidx.leman.ui.config.ConfigScreen
+      22  import net.liquidx.leman.ui.config.ConfigUiState
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 1 line, removed 1 line
+      49      @get:Rule
+      50      val compose = createComposeRule()
+      51  
+      52 -    private val tabs = listOf(ThreadsTab, ConfigTab)           
+      52 +    private val tabs = listOf(ThreadsTab, JobsTab, ConfigTab)  
+      53  
+      54      /**
+      55       * [settleMillis] defaults to one frame so looping animatio
+          ns (the running
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 52 lines
+      216          )
+      217      }
+      218  
+      219 +    // ---- 2e / 2f ------------------------------------------
+          +-----------------                                             
+      220 +                                                              
+      221 +    private fun jobsItems() = listOf(                         
+      222 +        net.liquidx.leman.ui.jobs.JobListItem(                
+      223 +            id = "job-1", name = "techmeme daily headlines", s
+          +cheduleDisplay = "0 7 * * *",                                 
+      224 +            stateLabel = "scheduled", tone = net.liquidx.leman
+          +.ui.jobs.JobTone.Accent, nextRunLabel = "07:00",              
+      225 +        ),                                                    
+      226 +        net.liquidx.leman.ui.jobs.JobListItem(                
+      227 +            id = "job-2", name = "gmail digest", scheduleDispl
+          +ay = "every 120m",                                            
+      228 +            stateLabel = "failed", tone = net.liquidx.leman.ui
+          +.jobs.JobTone.Danger, nextRunLabel = "11:20",                 
+      229 +        ),                                                    
+      230 +        net.liquidx.leman.ui.jobs.JobListItem(                
+      231 +            id = "job-3", name = "weekly review", scheduleDisp
+          +lay = "0 9 * * 1",                                            
+      232 +            stateLabel = "paused", tone = net.liquidx.leman.ui
+          +.jobs.JobTone.Faint, nextRunLabel = null,                     
+      233 +        ),                                                    
+      234 +    )                                                         
+      235 +                                                              
+      236 +    @Test                                                     
+      237 +    fun jobs_default() = snap("2e-jobs-default") {            
+      238 +        net.liquidx.leman.ui.jobs.JobsScreen(                 
+      239 +            state = net.liquidx.leman.ui.jobs.JobsUiState(    
+      240 +                items = jobsItems(), totalCount = 3, pausedCou
+          +nt = 1,                                                       
+      241 +                connState = ConnState.Online("0.18.0"), loaded
+          + = true,                                                      
+      242 +            ),                                                
+      243 +            clock = "09:41", tabs = tabs, onEvent = {},       
+      244 +            onOpenJob = {}, onNewJob = {}, onOpenThreads = {},
+          + onOpenConfig = {},                                           
+      245 +        )                                                     
+      246 +    }                                                         
+      247 +                                                              
+      248 +    @Test                                                     
+      249 +    fun jobs_empty() = snap("2e-jobs-empty") {                
+      250 +        net.liquidx.leman.ui.jobs.JobsScreen(                 
+      251 +            state = net.liquidx.leman.ui.jobs.JobsUiState(    
+      252 +                connState = ConnState.Online("0.18.0"), loaded
+          + = true,                                                      
+      253 +            ),                                                
+      254 +            clock = "09:41", tabs = tabs, onEvent = {},       
+      255 +            onOpenJob = {}, onNewJob = {}, onOpenThreads = {},
+          + onOpenConfig = {},                                           
+      256 +        )                                                     
+      257 +    }                                                         
+      258 +                                                              
+      259 +    @Test                                                     
+      260 +    fun jobEdit_existing() = snap("2f-job-edit") {            
+      261 +        net.liquidx.leman.ui.jobs.JobEditScreen(              
+      262 +            state = net.liquidx.leman.ui.jobs.JobEditUiState(i
+          +sNew = false, enabled = true),                                
+      263 +            clock = "09:41", connState = ConnState.Online("0.1
+          +8.0"),                                                        
+      264 +            onEvent = {}, onCancel = {},                      
+      265 +            nameState = rememberTextFieldState("techmeme daily
+          + headlines"),                                                 
+      266 +            scheduleState = rememberTextFieldState("0 7 * * *"
+          +),                                                            
+      267 +            promptState = rememberTextFieldState("visit techme
+          +me.com and produce a concise daily roundup."),                
+      268 +        )                                                     
+      269 +    }                                                         
+      270 +                                                              
+      271      // ---- markdown torture ---------------------------------
+           -------------------
+      272  
+      273      @Test
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Goldens updated. Let me visually check the new jobs screens:
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Screens look right and match the app's design language. Final verification:
+  full suite in verify mode plus debug and release builds.
+  Ran 2 shell commands, wrote 1 memory (ctrl+o to expand)
+
+⏺ The Jobs tab is built and fully working — list, add, edit, and delete
+  scheduled jobs, all backed by the gateway's /api/jobs API. All 269 unit tests
+  pass, screenshot goldens verify, and both debug and release variants build.
+
+  What I found first: your goal said "jobs," and the Hermes gateway turned out
+  to have a full jobs admin API at /api/jobs — even though GET /v1/capabilities
+  claims jobs_admin: false. I verified the whole contract live with safe probe
+  jobs (created disabled-schedule probes, then deleted them):
+  list/get/create/patch/delete plus pause/resume/run verbs, string schedules the
+  server validates (0 7 * * *, every 2h, 30m, ISO time), and a different error
+  shape than /v1/* (bare {"error":"…"} strings). The design is documented and
+  committed in docs/superpowers/specs/2026-07-20-jobs-tab-design.md.
+
+  What was built:
+  - Data layer — JobDto family in Dto.kt, four new HermesClient methods
+    implemented in OkHttpHermesClient (plus the test fake and the debug
+    in-process fake server, which now seeds two sample jobs). mapHttpFailure
+    also learned the jobs API's string error bodies, so the server's helpful
+    invalid-schedule message reaches the UI.
+  - JobsRepository — an in-memory store (no Room; jobs are low-volume admin
+    data) whose mutations fold the server's echo back into the state, since the
+    server normalizes schedules.
+  - UI — a third jobs tab (Tabler clock icon) between threads and config. The
+    list shows name, schedule, state (scheduled/paused/failed) and next fire
+    time, with a "new job" affordance above the tab bar. Tapping a row opens an
+    edit screen with name/schedule/prompt fields, an enabled toggle (immediate
+    PATCH with revert-on-failure), a two-tap delete, and inline display of
+    server errors like the invalid-schedule usage text.
+  - Tests — DTO fixture decoding, MockWebServer contract tests, 10 repository
+    tests, 11 ViewModel tests, and three new screenshot goldens
+    (2e-jobs-default, 2e-jobs-empty, 2f-job-edit); existing tab-bar goldens were
+    re-recorded for the three-tab layout.
+
+  The code changes are in your working tree but not committed (only the design
+  doc is, per the brainstorming skill's flow) — say the word and I'll commit,
+  and I can also install it on your device or emulator if you want to try it
+  against the live gateway.
+
+✔ Goal achieved (19m · 1 turn · 71k tokens) (ctrl+o to expand)
+
+✻ Worked for 19m 3s · done Monday, Jul 20 at 9:01 AM
+
+※ recap: Goal: add a Jobs tab to the LeMan app for listing, adding, editing, and deleting scheduled gateway jobs via the API. The feature is complete, all 269 tests pass, and builds succeed. Next action: commit the code changes if you approve. (disable recaps in /config)
+
+❯ Commit the changes                                                            
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Committed as 8709c5e feat: add a jobs tab that lists, adds, edits, and deletes
+  scheduled jobs — all 33 changed files (source, tests, fixtures, and
+  screenshot goldens), sitting on top of the design-doc commit. The only things
+  left uncommitted are the pre-existing .idea/ changes, which I left alone since
+  they predate this work.
+
+✻ Worked for 28s · done Monday, Jul 20 at 10:14 AM

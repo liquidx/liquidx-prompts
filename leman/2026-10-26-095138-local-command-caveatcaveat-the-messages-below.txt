@@ -1,0 +1,161 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 4.8 · Claude Max
+ ▝▝   ▝▝   ~/p/liquidx-leman-android
+
+
+❯ /model                                                                        
+  ⎿  Set model to Opus 4.8 (1M context) and saved as your default for new
+     sessions
+
+❯ Implement a way to cache the sessions locally on the device rather than       
+  always fetching from the server on startup. We merge the sessions we get from 
+  the server with what is on the cached client on startup and periodically      
+  when the app is open.                                                         
+
+⏺ I'll start by understanding this task. Since we're building a feature, let me
+  invoke the brainstorming skill first as required.
+
+⏺ Skill(superpowers:brainstorming)
+  ⎿  Successfully loaded skill
+
+⏺ Let me explore the project context first to understand how sessions currently
+  work.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+⏺ Interesting — there's already a Room database and lots of sessions/sync
+  architecture. Let me look closer.
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+⏺ There's already a SessionSyncer and a Room database. Let me understand the
+  current sync/caching architecture before assuming anything.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ A robust cache + sync layer already exists. Let me understand the current
+  startup flow and how sync is scheduled, so I know what's actually missing
+  versus already built.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ This is already a Room-as-cache, gateway-as-source-of-record architecture. The
+  UI observes Room flows and SessionSyncer already merges. Let me check the
+  sync scheduling and startup to see what's genuinely missing.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ There's a SyncScheduler. Let me read it and the ThreadsViewModel to understand
+  periodic + startup sync.
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Let me check how the database is built (durable vs in-memory) and how it's
+  wired — this determines whether the cache actually survives restarts.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ The grep redacted names. Let me read the actual database builder.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ I dug into the codebase before building anything, and I need to surface
+  something important first.
+
+  This feature already exists and is fully wired up. The architecture you're
+  describing — local cache, no blocking fetch on startup, merge
+  server-with-cache on startup and periodically — is already the implemented
+  design. Here are the four pieces:
+
+  1. Durable local cache — LemanDatabase (data/local/LemanDatabase.kt) is an
+     on-disk Room DB (leman.db) holding ThreadEntity + TurnEntity. It survives
+     process restarts (fallbackToDestructiveMigration only drops on a
+     schema-version bump, not on relaunch). A comment states the intent
+     explicitly: "Room is a cache of the gateway's session store."
+  2. No blocking fetch on startup — the UI observes Room, not the network.
+     ThreadsViewModel (ui/threads/ThreadsViewModel.kt:76) builds its state from
+     repo.observeThreads(), a Room Flow. So on cold start the cached sessions
+     render immediately; the network is never on the critical path.
+  3. Merge on startup + periodically — SyncScheduler
+     (data/repo/SyncScheduler.kt) fires a sync the instant the gateway goes
+     Online on foreground, then again every 30s while foregrounded
+     (backgrounding cancels). Each tick calls SessionSyncer.syncOnce()
+     (data/repo/SessionSyncer.kt), which is a genuine merge, not a replace: it
+     preserves local-only sidecar state (pinned / unread / agentName /
+     agentGlyph), carries unsynced local turns across the rebuild, skips threads
+     with an in-flight run, and change-detects on the server's last_active so
+     unchanged threads aren't touched.
+
+  So the behavior "merge what the server gives us with the cached client on
+  startup and periodically when the app is open" is already what runs today.
+
+  Given that, I don't want to build a redundant second copy. What's the actual
+  gap you're seeing?
+
+⏺ User answered Claude's questions:
+  ⎿  · The local cache + merge-sync architecture already exists (Room cache, 
+     observe-from-Room UI, foreground SessionSyncer merging every 30s). What's 
+     the actual gap you want closed? → Confirm & document
+
+⏺ Good — it's already done. Let me check whether the specs already document
+  this, so I know whether a doc note would even add anything.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ There's a dedicated docs/spec/03-sync-and-cache.md. Let me confirm it already
+  documents the caching + merge + periodic behavior.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Confirmed — this is already fully built and already documented. Nothing to
+  add.
+
+  It's already implemented
+
+  Requirement: Cache sessions locally on device
+  Where it lives: LemanDatabase → on-disk Room DB leman.db (ThreadEntity +
+  TurnEntity)
+  Status: ✅ durable across restarts
+  ────────────────────────────────────────
+  Requirement: Don't block on server fetch at startup
+  Where it lives: ThreadsViewModel observes repo.observeThreads() (Room Flow);
+  cached list renders immediately
+  Status: ✅ network off the critical path
+  ────────────────────────────────────────
+  Requirement: Merge server ⨝ cache on startup
+  Where it lives: SyncScheduler.onForeground() fires syncNow() the instant the
+  gateway is Online
+  Status: ✅
+  ────────────────────────────────────────
+  Requirement: Merge periodically while open
+  Where it lives: Same scheduler loops every 30s while foregrounded;
+  backgrounding cancels
+  Status: ✅
+  ────────────────────────────────────────
+  Requirement: Real merge, not replace
+  Where it lives: SessionSyncer.syncOnce() preserves sidecar state
+  (pinned/unread/agentName/agentGlyph), carries unsynced local turns, skips
+  in-flight runs, change-detects on server last_active
+  Status: ✅
+
+  It's already documented
+
+  docs/spec/03-sync-and-cache.md is the spec for exactly this. It states the
+  governing principle ("Room is a cache, not primary storage"), diagrams the
+  SessionSyncer → Room → Flow → ViewModel data flow, and has dedicated sections
+  for Sync triggers (foreground immediate + 30s loop + post-send), Sidecar 
+  preservation, and Offline behavior. There's also a matching design doc at
+  docs/superpowers/specs/2026-07-17-session-sync-design.md.
+
+  One deliberate non-goal (in case it's what you actually want)
+
+  The spec explicitly rules out one thing you might be imagining: there is no 
+  background sync — "Backgrounding cancels the loop outright — no sync while the
+  app isn't visible, no WorkManager, no push." So the cache only refreshes
+  while the app is open. If you want the cache kept warm before the user opens
+  the app (WorkManager periodic sync), that's the one genuinely new piece — say
+  the word and I'll brainstorm it properly.
+
+  Otherwise: no code or doc changes are warranted here — it's done.
+
+✻ Churned for 2m 35s · done Friday, Jul 17 at 10:51 AM

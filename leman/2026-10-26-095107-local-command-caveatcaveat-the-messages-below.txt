@@ -1,0 +1,3264 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Fable 5 · Claude Max
+ ▝▝   ▝▝   ~/p/liquidx-leman-android
+
+
+❯ /clear                                                                        
+
+❯ Let's start implementing the app using the spec in @docs/spec/ and implement  
+  the whole thing.                                                              
+  ⎿  Listed directory docs/spec/
+
+⏺ I'll use the superpowers:writing-plans skill to plan this implementation from
+  the spec, since we have a full spec for a multi-step build.
+
+⏺ Skill(superpowers:writing-plans)
+  ⎿  Successfully loaded skill
+
+  Searched for 1 pattern, read 10 files, listed 1 directory, ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(docs/superpowers/plans/2026-07-15-leman-app.md)
+  ⎿  Wrote 237 lines to docs/superpowers/plans/2026-07-15-leman-app.md
+      1 # LeMan App Implementation Plan
+      3 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:su
+        bagent-driven-development (recommended) or superpowers:executing-
+         [ ]`) syntax for tracking.
+      5 > The normative spec lives in `docs/spec/01…08` and the design ha
+        ndoff in `docs/design/README.md`. Every task below cites the spec
+        e spec wins.
+      6 
+        ent for the Hermes agent gateway — per `docs/spec/`: data layer (
+        se design system, four scree
+     … +419 lines (ctrl+o to expand)
+
+⏺ Skill(superpowers:executing-plans)
+  ⎿  Successfully loaded skill
+
+⏺ I'm using the executing-plans skill to implement this plan. Setting up a
+  feature branch and task tracking first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Starting Task 1. First, the fonts — fetching Spline Sans Mono static TTFs from
+  Google Fonts:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Fonts are in. Now updating the version catalog and build files:
+
+⏺ Write(gradle/libs.versions.toml)
+  ⎿  Error writing file
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Write(gradle/libs.versions.toml)
+  ⎿  Added 48 lines, removed 12 lines
+       1  [versions]
+       2  agp = "9.2.1"
+       3 -coreKtx = "1.10.1"                                             
+       4 -junit = "4.13.2"                                               
+       5 -junitVersion = "1.1.5"                                         
+       6 -espressoCore = "3.5.1"                                         
+       7 -lifecycleRuntimeKtx = "2.6.1"                                  
+       8 -activityCompose = "1.8.0"                                      
+       3  kotlin = "2.2.10"
+       4 +ksp = "2.2.10-2.0.2"                                           
+       5  composeBom = "2025.12.00"
+       6 +coreKtx = "1.16.0"                                             
+       7 +activityCompose = "1.10.1"                                     
+       8 +lifecycle = "2.9.1"                                            
+       9 +navigationCompose = "2.9.0"                                    
+      10 +okhttp = "4.12.0"                                              
+      11 +kotlinxSerialization = "1.9.0"                                 
+      12 +kotlinxCoroutines = "1.10.2"                                   
+      13 +room = "2.7.2"                                                 
+      14 +datastore = "1.1.7"                                            
+      15 +biometric = "1.1.0"                                            
+      16 +commonmark = "0.24.0"                                          
+      17 +junit = "4.13.2"                                               
+      18 +junitVersion = "1.2.1"                                         
+      19 +espressoCore = "3.6.1"                                         
+      20 +turbine = "1.2.0"                                              
+      21 +robolectric = "4.15.1"                                         
+      22 +roborazzi = "1.39.0"                                           
+      23 +leakcanary = "2.14"                                            
+      24  
+      25  [libraries]
+      26  androidx-core-ktx = { group = "androidx.core", name = "core-ktx
+          ", version.ref = "coreKtx" }
+      14 -junit = { group = "junit", name = "junit", version.ref = "junit
+         -" }                                                            
+      15 -androidx-junit = { group = "androidx.test.ext", name = "junit",
+         - version.ref = "junitVersion" }                                
+      16 -androidx-espresso-core = { group = "androidx.test.espresso", na
+         -me = "espresso-core", version.ref = "espressoCore" }           
+      17 -androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle"
+         -, name = "lifecycle-runtime-ktx", version.ref = "lifecycleRunti
+         -meKtx" }                                                       
+      27 +androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle"
+         +, name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }  
+      28 +androidx-lifecycle-viewmodel-compose = { group = "androidx.life
+         +cycle", name = "lifecycle-viewmodel-compose", version.ref = "li
+         +fecycle" }                                                     
+      29 +androidx-lifecycle-runtime-compose = { group = "androidx.lifecy
+         +cle", name = "lifecycle-runtime-compose", version.ref = "lifecy
+         +cle" }                                                         
+      30  androidx-activity-compose = { group = "androidx.activity", name
+           = "activity-compose", version.ref = "activityCompose" }
+      31 +androidx-navigation-compose = { group = "androidx.navigation", 
+         +name = "navigation-compose", version.ref = "navigationCompose" 
+         +}                                                              
+      32  androidx-compose-bom = { group = "androidx.compose", name = "co
+          mpose-bom", version.ref = "composeBom" }
+      33  androidx-compose-ui = { group = "androidx.compose.ui", name = "
+          ui" }
+      34  androidx-compose-ui-graphics = { group = "androidx.compose.ui",
+           name = "ui-graphics" }
+     ...
+      37  androidx-compose-ui-test-manifest = { group = "androidx.compose
+          .ui", name = "ui-test-manifest" }
+      38  androidx-compose-ui-test-junit4 = { group = "androidx.compose.u
+          i", name = "ui-test-junit4" }
+      39  androidx-compose-material3 = { group = "androidx.compose.materi
+          al3", name = "material3" }
+      27 -androidx-compose-material3-adaptive-navigation-suite = { group 
+         -= "androidx.compose.material3", name = "material3-adaptive-navi
+         -gation-suite" }                                                
+      40 +okhttp = { group = "com.squareup.okhttp3", name = "okhttp", ver
+         +sion.ref = "okhttp" }                                          
+      41 +okhttp-mockwebserver = { group = "com.squareup.okhttp3", name =
+         + "mockwebserver", version.ref = "okhttp" }                     
+      42 +kotlinx-serialization-json = { group = "org.jetbrains.kotlinx",
+         + name = "kotlinx-serialization-json", version.ref = "kotlinxSer
+         +ialization" }                                                  
+      43 +kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", na
+         +me = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutine
+         +s" }                                                           
+      44 +androidx-room-runtime = { group = "androidx.room", name = "room
+         +-runtime", version.ref = "room" }                              
+      45 +androidx-room-ktx = { group = "androidx.room", name = "room-ktx
+         +", version.ref = "room" }                                      
+      46 +androidx-room-compiler = { group = "androidx.room", name = "roo
+         +m-compiler", version.ref = "room" }                            
+      47 +androidx-room-testing = { group = "androidx.room", name = "room
+         +-testing", version.ref = "room" }                              
+      48 +androidx-datastore-preferences = { group = "androidx.datastore"
+         +, name = "datastore-preferences", version.ref = "datastore" }  
+      49 +androidx-biometric = { group = "androidx.biometric", name = "bi
+         +ometric", version.ref = "biometric" }                          
+      50 +commonmark = { group = "org.commonmark", name = "commonmark", v
+         +ersion.ref = "commonmark" }                                    
+      51 +commonmark-ext-gfm-tables = { group = "org.commonmark", name = 
+         +"commonmark-ext-gfm-tables", version.ref = "commonmark" }      
+      52 +commonmark-ext-gfm-strikethrough = { group = "org.commonmark", 
+         +name = "commonmark-ext-gfm-strikethrough", version.ref = "commo
+         +nmark" }                                                       
+      53 +junit = { group = "junit", name = "junit", version.ref = "junit
+         +" }                                                            
+      54 +androidx-junit = { group = "androidx.test.ext", name = "junit",
+         + version.ref = "junitVersion" }                                
+      55 +androidx-espresso-core = { group = "androidx.test.espresso", na
+         +me = "espresso-core", version.ref = "espressoCore" }           
+      56 +turbine = { group = "app.cash.turbine", name = "turbine", versi
+         +on.ref = "turbine" }                                           
+      57 +robolectric = { group = "org.robolectric", name = "robolectric"
+         +, version.ref = "robolectric" }                                
+      58 +roborazzi = { group = "io.github.takahirom.roborazzi", name = "
+         +roborazzi", version.ref = "roborazzi" }                        
+      59 +roborazzi-compose = { group = "io.github.takahirom.roborazzi", 
+         +name = "roborazzi-compose", version.ref = "roborazzi" }        
+      60 +roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi
+         +", name = "roborazzi-junit-rule", version.ref = "roborazzi" }  
+      61 +leakcanary = { group = "com.squareup.leakcanary", name = "leakc
+         +anary-android", version.ref = "leakcanary" }                   
+      62  
+      63  [plugins]
+      64  android-application = { id = "com.android.application", version
+          .ref = "agp" }
+      65  kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", 
+          version.ref = "kotlin" }
+      32 -                                                               
+      66 +kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.seri
+         +alization", version.ref = "kotlin" }                           
+      67 +ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }  
+      68 +roborazzi = { id = "io.github.takahirom.roborazzi", version.ref
+         + = "roborazzi" }                                               
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Write(app/build.gradle.kts)
+  ⎿  Added 46 lines, removed 3 lines
+      1  plugins {
+      2      alias(libs.plugins.android.application)
+      3      alias(libs.plugins.kotlin.compose)
+      4 +    alias(libs.plugins.kotlin.serialization)                    
+      5 +    alias(libs.plugins.ksp)                                     
+      6 +    alias(libs.plugins.roborazzi)                               
+      7  }
+      8  
+      9  android {
+     ...
+      19          minSdk = 34
+      20          targetSdk = 36
+      21          versionCode = 1
+      19 -        versionName = "1.0"                                    
+      22 +        versionName = "0.1"                                    
+      23  
+      24          testInstrumentationRunner = "androidx.test.runner.Andro
+          idJUnitRunner"
+      25      }
+      26  
+      27      buildTypes {
+      28 +        debug {                                                
+      29 +            applicationIdSuffix = ".debug"                     
+      30 +        }                                                      
+      31          release {
+      32              optimization {
+      33                  enable = false
+     ...
+       40      }
+       41      buildFeatures {
+       42          compose = true
+       43 +        buildConfig = true                                    
+       44      }
+       45 +    testOptions {                                             
+       46 +        unitTests {                                           
+       47 +            isIncludeAndroidResources = true                  
+       48 +        }                                                     
+       49 +    }                                                         
+       50  }
+       51  
+       52 +ksp {                                                         
+       53 +    arg("room.schemaLocation", "$projectDir/schemas")         
+       54 +}                                                             
+       55 +                                                              
+       56  dependencies {
+       57      implementation(platform(libs.androidx.compose.bom))
+       58      implementation(libs.androidx.activity.compose)
+       59      implementation(libs.androidx.compose.material3)
+       44 -    implementation(libs.androidx.compose.material3.adaptive.na
+          -vigation.suite)                                               
+       60      implementation(libs.androidx.compose.ui)
+       61      implementation(libs.androidx.compose.ui.graphics)
+       62      implementation(libs.androidx.compose.ui.tooling.preview)
+       63      implementation(libs.androidx.core.ktx)
+       64      implementation(libs.androidx.lifecycle.runtime.ktx)
+       65 +    implementation(libs.androidx.lifecycle.runtime.compose)   
+       66 +    implementation(libs.androidx.lifecycle.viewmodel.compose) 
+       67 +    implementation(libs.androidx.navigation.compose)          
+       68 +    implementation(libs.okhttp)                               
+       69 +    implementation(libs.kotlinx.serialization.json)           
+       70 +    implementation(libs.androidx.room.runtime)                
+       71 +    implementation(libs.androidx.room.ktx)                    
+       72 +    ksp(libs.androidx.room.compiler)                          
+       73 +    implementation(libs.androidx.datastore.preferences)       
+       74 +    implementation(libs.androidx.biometric)                   
+       75 +    implementation(libs.commonmark)                           
+       76 +    implementation(libs.commonmark.ext.gfm.tables)            
+       77 +    implementation(libs.commonmark.ext.gfm.strikethrough)     
+       78 +                                                              
+       79      testImplementation(libs.junit)
+       80 +    testImplementation(libs.kotlinx.coroutines.test)          
+       81 +    testImplementation(libs.turbine)                          
+       82 +    testImplementation(libs.okhttp.mockwebserver)             
+       83 +    testImplementation(libs.androidx.room.testing)            
+       84 +    testImplementation(libs.robolectric)                      
+       85 +    testImplementation(libs.roborazzi)                        
+       86 +    testImplementation(libs.roborazzi.compose)                
+       87 +    testImplementation(libs.roborazzi.junit.rule)             
+       88 +    testImplementation(libs.androidx.compose.ui.test.junit4)  
+       89 +                                                              
+       90      androidTestImplementation(platform(libs.androidx.compose.b
+           om))
+       91      androidTestImplementation(libs.androidx.compose.ui.test.ju
+           nit4)
+       92      androidTestImplementation(libs.androidx.espresso.core)
+       93      androidTestImplementation(libs.androidx.junit)
+       94 +    androidTestImplementation(libs.kotlinx.coroutines.test)   
+       95 +    androidTestImplementation(libs.androidx.room.testing)     
+       96 +                                                              
+       97      debugImplementation(libs.androidx.compose.ui.test.manifest
+           )
+       98      debugImplementation(libs.androidx.compose.ui.tooling)
+       57 -}                                                             
+       99   No newline at end of file
+      100 +    debugImplementation(libs.leakcanary)                      
+      101 +}                                                             
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/debug/res/xml/network_security_config.xml)
+  ⎿  Wrote 12 lines to app/src/debug/res/xml/network_security_config.xml
+       1 <?xml version="1.0" encoding="utf-8"?>
+       2 <!-- Debug-only: cleartext allowed for the emulator host loopbac
+         k and RFC1918 LAN
+          config = TLS only. -->
+       4 <network-security-config>
+       5     <base-config cleartextTrafficPermitted="false" />
+       6     <domain-config cleartextTrafficPermitted="true">
+       8         <domain includeSubdomains="false">localhost</domain>
+       9         <domain includeSubdomains="true">10.0.0.0</domain>
+      10         <domain includeSubdomains="true">192.168.0.0</domain>
+     … +4 lines (ctrl+o to expand)
+
+⏺ Write(app/src/debug/res/xml/network_security_config.xml)
+  ⎿  Added 4 lines, removed 9 lines
+       1  <?xml version="1.0" encoding="utf-8"?>
+       2 -<!-- Debug-only: cleartext allowed for the emulator host loopba
+         -ck and RFC1918 LAN                                             
+       3 -     gateways (spec 08). Release builds have no network securit
+         -y config = TLS only. -->                                       
+       2 +<!-- Debug-only (spec 08): cleartext for the emulator loopback 
+         +and LAN gateways.                                              
+       3 +     Android's config can't express RFC1918 CIDR ranges, so deb
+         +ug builds permit                                               
+       4 +     cleartext globally; release builds carry no config and sta
+         +y TLS-only. -->                                                
+       5  <network-security-config>
+       5 -    <base-config cleartextTrafficPermitted="false" />          
+       6 -    <domain-config cleartextTrafficPermitted="true">           
+       7 -        <domain includeSubdomains="false">10.0.2.2</domain>    
+       8 -        <domain includeSubdomains="false">localhost</domain>   
+       9 -        <domain includeSubdomains="true">10.0.0.0</domain>     
+      10 -        <domain includeSubdomains="true">192.168.0.0</domain>  
+      11 -    </domain-config>                                           
+       6 +    <base-config cleartextTrafficPermitted="true" />           
+       7  </network-security-config>
+
+⏺ Write(app/src/debug/AndroidManifest.xml)
+  ⎿  Wrote 9 lines to app/src/debug/AndroidManifest.xml
+      1 <?xml version="1.0" encoding="utf-8"?>
+      2 <manifest xmlns:android="http://schemas.android.com/apk/res/andro
+        id"
+      3     xmlns:tools="http://schemas.android.com/tools">
+      4 
+      6         android:networkSecurityConfig="@xml/network_security_conf
+        ig"
+      7         tools:targetApi="34" />
+      8 
+      9 </manifest>
+
+⏺ Write(NOTICE)
+  ⎿  Wrote 12 lines to NOTICE
+       1 Third-party notices for LeMan
+       2 =============================
+       4 Tabler Icons (https://tabler.io/icons)
+       5   The tab bar icons ("message", "settings") are derived from Tab
+         ler Icons.
+       7   Licensed under the MIT License: https://github.com/tabler/tabl
+         er-icons/blob/main/LICENSE
+       8 
+         Mono)
+      10   Copyright 2022 The Spline Sans Mono Project Authors
+     … +5 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Update(gradle/libs.versions.toml)
+  ⎿  Added 1 line, removed 1 line
+      19  espressoCore = "3.6.1"
+      20  turbine = "1.2.0"
+      21  robolectric = "4.15.1"
+      22 -roborazzi = "1.39.0"                                           
+      22 +roborazzi = "1.43.1"                                           
+      23  leakcanary = "2.14"
+      24  
+      25  [libraries]
+
+  Ran 3 shell commands (ctrl+o to expand)
+⏺ Update(app/build.gradle.kts)
+  ⎿  Removed 1 line
+      3      alias(libs.plugins.kotlin.compose)
+      4      alias(libs.plugins.kotlin.serialization)
+      5      alias(libs.plugins.ksp)
+      6 -    alias(libs.plugins.roborazzi)                               
+      6  }
+      7  
+      8  android {
+
+⏺ Update(app/build.gradle.kts)
+  ⎿  Added 9 lines
+      44      testOptions {
+      45          unitTests {
+      46              isIncludeAndroidResources = true
+      47 +            all { test ->                                      
+      48 +                // The Roborazzi Gradle plugin doesn't support 
+         +AGP 9 yet, so                                                  
+      49 +                // record/verify modes are driven by -Proborazz
+         +i.test.record=true /                                           
+      50 +                // -Proborazzi.test.verify=true instead of reco
+         +rdRoborazziDebug tasks.                                        
+      51 +                listOf("roborazzi.test.record", "roborazzi.test
+         +.verify", "roborazzi.test.compare")                            
+      52 +                    .forEach { key ->                          
+      53 +                        (project.findProperty(key) as? String)?
+         +.let { test.systemProperty(key, it) }                          
+      54 +                    }                                          
+      55 +            }                                                  
+      56          }
+      57      }
+      58  }
+
+⏺ Update(gradle/libs.versions.toml)
+  ⎿  Removed 1 line
+      65  kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", 
+          version.ref = "kotlin" }
+      66  kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.seri
+          alization", version.ref = "kotlin" }
+      67  ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+      68 -roborazzi = { id = "io.github.takahirom.roborazzi", version.ref
+         - = "roborazzi" }                                               
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ KSP now versions independently (2.3.x line, decoupled from Kotlin). Trying
+  2.3.9:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/MainActivity.kt)
+  ⎿  Error writing file
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/MainActivity.kt)
+  ⎿  Added 5 lines, removed 74 lines
+       4  import androidx.activity.ComponentActivity
+       5  import androidx.activity.compose.setContent
+       6  import androidx.activity.enableEdgeToEdge
+       7 +import androidx.compose.foundation.background                  
+       8 +import androidx.compose.foundation.layout.Box                  
+       9  import androidx.compose.foundation.layout.fillMaxSize
+       8 -import androidx.compose.foundation.layout.padding              
+       9 -import androidx.compose.material3.Icon                         
+      10 -import androidx.compose.material3.Scaffold                     
+      11 -import androidx.compose.material3.Text                         
+      12 -import androidx.compose.material3.adaptive.navigationsuite.Navi
+         -gationSuiteScaffold                                            
+      13 -import androidx.compose.runtime.Composable                     
+      14 -import androidx.compose.runtime.getValue                       
+      15 -import androidx.compose.runtime.mutableStateOf                 
+      16 -import androidx.compose.runtime.saveable.rememberSaveable      
+      17 -import androidx.compose.runtime.setValue                       
+      10  import androidx.compose.ui.Modifier
+      19 -import androidx.compose.ui.res.painterResource                 
+      20 -import androidx.compose.ui.graphics.vector.ImageVector         
+      21 -import androidx.compose.ui.tooling.preview.Preview             
+      22 -import androidx.compose.ui.tooling.preview.PreviewScreenSizes  
+      23 -import net.liquidx.leman.ui.theme.LeManTheme                   
+      11 +import androidx.compose.ui.graphics.Color                      
+      12  
+      13  class MainActivity : ComponentActivity() {
+      14      override fun onCreate(savedInstanceState: Bundle?) {
+      15          super.onCreate(savedInstanceState)
+      16          enableEdgeToEdge()
+      17          setContent {
+      30 -            LeManTheme {                                       
+      31 -                LeManApp()                                     
+      32 -            }                                                  
+      18 +            // Placeholder until ui/nav lands (Task 15).       
+      19 +            Box(Modifier.fillMaxSize().background(Color(0xFF080
+         +80A)))                                                         
+      20          }
+      21      }
+      22  }
+      36 -                                                               
+      37 -@PreviewScreenSizes                                            
+      38 -@Composable                                                    
+      39 -fun LeManApp() {                                               
+      40 -    var currentDestination by rememberSaveable { mutableStateOf
+         -(AppDestinations.HOME) }                                       
+      41 -                                                               
+      42 -    NavigationSuiteScaffold(                                   
+      43 -        navigationSuiteItems = {                               
+      44 -            AppDestinations.entries.forEach {                  
+      45 -                item(                                          
+      46 -                    icon = {                                   
+      47 -                        Icon(                                  
+      48 -                            painterResource(it.icon),          
+      49 -                            contentDescription = it.label      
+      50 -                        )                                      
+      51 -                    },                                         
+      52 -                    label = { Text(it.label) },                
+      53 -                    selected = it == currentDestination,       
+      54 -                    onClick = { currentDestination = it }      
+      55 -                )                                              
+      56 -            }                                                  
+      57 -        }                                                      
+      58 -    ) {                                                        
+      59 -        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadd
+         -ing ->                                                         
+      60 -            Greeting(                                          
+      61 -                name = "Android",                              
+      62 -                modifier = Modifier.padding(innerPadding)      
+      63 -            )                                                  
+      64 -        }                                                      
+      65 -    }                                                          
+      66 -}                                                              
+      67 -                                                               
+      68 -enum class AppDestinations(                                    
+      69 -    val label: String,                                         
+      70 -    val icon: Int,                                             
+      71 -) {                                                            
+      72 -    HOME("Home", R.drawable.ic_home),                          
+      73 -    FAVORITES("Favorites", R.drawable.ic_favorite),            
+      74 -    PROFILE("Profile", R.drawable.ic_account_box),             
+      75 -}                                                              
+      76 -                                                               
+      77 -@Composable                                                    
+      78 -fun Greeting(name: String, modifier: Modifier = Modifier) {    
+      79 -    Text(                                                      
+      80 -        text = "Hello $name!",                                 
+      81 -        modifier = modifier                                    
+      82 -    )                                                          
+      83 -}                                                              
+      84 -                                                               
+      85 -@Preview(showBackground = true)                                
+      86 -@Composable                                                    
+      87 -fun GreetingPreview() {                                        
+      88 -    LeManTheme {                                               
+      89 -        Greeting("Android")                                    
+      90 -    }                                                          
+      91 -}                                                              
+      23   No newline at end of file
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Build passes. Committing Task 1:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Task 2 — domain models, pure Kotlin:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/Models.kt)
+  ⎿  Wrote 70 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/Models.kt
+      1 package net.liquidx.leman.domain.model
+      2 
+      3 /** Client-owned thread lifecycle (spec 03). */
+      4 enum class ThreadState { Idle, Running, Failed }
+      5 
+      6 enum class TurnKind { User, Agent, Trace }
+      7 
+      8 /** Send lifecycle for user turns (spec 03). */
+      9 enum class SendState { Synced, Sending, Failed }
+     … +64 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/AgentBlock.kt)
+  ⎿  Wrote 38 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/AgentBlock.kt
+       1 package net.liquidx.leman.domain.model
+       2 
+       3 /**
+         arkdown by the
+       5  * post-processor (spec 05). The renderer consumes only this mod
+         el.
+       6  */
+       8     data class Prose(val markdown: String) : AgentBlock
+       9 
+      10     data class Code(
+     … +32 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/RunEvent.kt)
+  ⎿  Wrote 35 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/RunEvent.kt
+      1 package net.liquidx.leman.domain.model
+      2 
+      3 /**
+      4  * Domain form of a gateway run event (spec 02). The wire framing
+         is `data:`-only
+        to [Unknown]
+      6  * rather than crashing — the gateway evolves independently.
+      7  */
+      8 sealed interface RunEvent {
+      9     val timestamp: Double
+     … +30 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/ApiError.kt)
+  ⎿  Wrote 32 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/ApiError.kt
+       1 package net.liquidx.leman.domain.model
+       2 
+       3 import java.io.IOException
+       5 /**
+       6  * The one error taxonomy (spec 04). Everything thrown by OkHttp
+         /serialization is
+       7  * mapped into this at the data/remote boundary; nothing above t
+       8  * layer sees raw exceptions.
+       9  */
+      10 sealed interface ApiError {
+     … +29 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/ConnState.kt)
+  ⎿  Wrote 13 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/ConnState.kt
+       1 package net.liquidx.leman.domain.model
+       2 
+       3 /**
+          is no persistent
+       5  * app-wide socket; this reflects the health probe plus auth sta
+         te.
+       6  */
+       8     data object NotConfigured : ConnState
+       9     data object Checking : ConnState
+      10     data class Online(val version: String) : ConnState
+     … +4 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/model/Settings.kt)
+  ⎿  Wrote 23 lines to
+     app/src/main/java/net/liquidx/leman/domain/model/Settings.kt
+       1 package net.liquidx.leman.domain.model
+       2 
+       3 /** User settings (spec 03 table). Defaults match the DataStore 
+         keys' defaults. */
+       4 data class Settings(
+       6     val agentName: String = DEFAULT_AGENT_NAME,
+       7     val agentGlyph: String = DEFAULT_AGENT_GLYPH,
+       8     val biometricUnlock: Boolean = false,
+       9     val expandTracesByDefault: Boolean = false,
+      10     val showToolArgs: Boolean = true,
+     … +16 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Task 3–5: wire layer, test-first. Writing fixtures and tests before the
+  implementation:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/test/resources/fixtures/wire/health.json)
+  ⎿  Wrote 1 line to app/src/test/resources/fixtures/wire/health.json
+      1 {"status":"ok","platform":"hermes-agent","version":"0.18.0","extr
+        a_future_field":true}
+
+⏺ Write(app/src/test/resources/fixtures/wire/run-accepted.json)
+  ⎿  Wrote 1 line to app/src/test/resources/fixtures/wire/run-accepted.json
+      1 {"run_id":"run_7f3a","status":"started"}
+
+⏺ Write(app/src/test/resources/fixtures/wire/run-running.json)
+  ⎿  Wrote 1 line to app/src/test/resources/fixtures/wire/run-running.json
+      1 {"object":"hermes.run","run_id":"run_7f3a","status":"running","se
+        ssion_id":"sess_91","model":"hermes-agent","created_at":175256160
+        0.25,"updated_at":1752561610.5,"last_event":"tool.started"}
+
+⏺ Write(app/src/test/resources/fixtures/wire/run-completed.json)  ⎿  Wrote 1 line to
+     app/src/test/resources/fixtures/wire/run-completed.json
+      1 {"object":"hermes.run","run_id":"run_7f3a","status":"completed","
+        session_id":"sess_91","model":"hermes-agent","created_at":1752561
+        600.25,"updated_at":1752561800.0,"last_event":"run.completed","ou
+        tput":"the pipeline is fixed.","usage":{"input_tokens":812,"outpu
+        t_tokens":344,"total_tokens":1156}}
+
+⏺ Write(app/src/test/resources/fixtures/wire/run-unknown-status.json)
+  ⎿  Wrote 1 line to
+     app/src/test/resources/fixtures/wire/run-unknown-status.json
+      1 {"object":"hermes.run","run_id":"run_7f3a","status":"paused_for_r
+        eview","session_id":"sess_91","model":"hermes-agent","created_at"
+        :1752561600.25,"updated_at":1752561610.5}
+
+⏺ Write(app/src/test/resources/fixtures/wire/events-stream.txt)
+  ⎿  Wrote 21 lines to
+     app/src/test/resources/fixtures/wire/events-stream.txt
+      1 data: {"event":"reasoning.available","run_id":"run_7f3a","timesta
+        ed"}
+      2 
+        2561602.0,"tool":"ci.logs","preview":"fetch last 20 runs of pipel
+      4 
+      5 data: {"event":"tool.completed","run_id":"run_7f3a","timestamp":1
+      6 
+      7 data: {"event":"message.delta","run_id":"run_7f3a","timestamp":17
+      8 
+        52561610.4,"delta":"`test_retry_backoff`"}
+     … +22 lines (ctrl+o to expand)
+
+⏺ Now the tests:
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/remote/Fixtures.kt)
+  ⎿  Wrote 8 lines to
+     app/src/test/java/net/liquidx/leman/data/remote/Fixtures.kt
+      1 package net.liquidx.leman.data.remote
+      2 
+      3 object Fixtures {
+      4     fun load(path: String): String =
+      5         checkNotNull(javaClass.classLoader?.getResourceAsStream("
+        fixtures/$path")) {
+      6             "missing fixture fixtures/$path"
+      7         }.bufferedReader().readText()
+      8 }
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/remote/DtoTest.kt)
+  ⎿  Wrote 47 lines to
+     app/src/test/java/net/liquidx/leman/data/remote/DtoTest.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import org.junit.Assert.assertEquals
+       4 import org.junit.Assert.assertNull
+       5 import org.junit.Test
+       6 
+       7 class DtoTest {
+       8 
+       9     @Test
+      10     fun healthDto_decodesFixture_ignoringUnknownFields() {
+     … +42 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/remote/RunEventParserTest.kt)
+  ⎿  Wrote 70 lines to
+     app/src/test/java/net/liquidx/leman/data/remote/RunEventParserTest.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import net.liquidx.leman.domain.model.RunEvent
+       4 import org.junit.Assert.assertEquals
+       5 import org.junit.Assert.assertTrue
+       6 import org.junit.Test
+       7 
+       8 class RunEventParserTest {
+       9 
+      10     @Test
+     … +74 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/remote/SseReaderTest.kt)
+  ⎿  Wrote 50 lines to
+     app/src/test/java/net/liquidx/leman/data/remote/SseReaderTest.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import okio.Buffer
+       4 import org.junit.Assert.assertEquals
+       5 import org.junit.Test
+       6 
+       7 class SseReaderTest {
+       8 
+       9     private fun framesOf(text: String): List<String> {
+      10         val buffer = Buffer().writeUtf8(text)
+     … +43 lines (ctrl+o to expand)
+
+⏺ Now the client test (MockWebServer), then the implementations:
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/remote/OkHttpHermesClientTest.k
+       t)
+  ⎿  Wrote 148 lines to app/src/test/java/net/liquidx/leman/data/remote/OkH
+     ttpHermesClientTest.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import kotlinx.coroutines.flow.toList
+       4 import kotlinx.coroutines.test.runTest
+       5 import net.liquidx.leman.domain.model.ApiError
+       6 import net.liquidx.leman.domain.model.ApiResult
+       7 import net.liquidx.leman.domain.model.RunEvent
+       8 import net.liquidx.leman.domain.model.errorOrNull
+       9 import net.liquidx.leman.domain.model.getOrNull
+      10 import okhttp3.mockwebserver.MockResponse
+     … +160 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Red confirmed. Now the implementations:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/remote/Dto.kt)
+  ⎿  Wrote 74 lines to
+     app/src/main/java/net/liquidx/leman/data/remote/Dto.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import kotlinx.serialization.SerialName
+       4 import kotlinx.serialization.Serializable
+       5 import kotlinx.serialization.json.Json
+       7 /** Wire JSON config: the gateway evolves independently, never c
+         rash on new fields. */
+       8 val HermesJson: Json = Json { ignoreUnknownKeys = true }
+       9 
+      10 @Serializable
+     … +67 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/remote/RunEventParser.kt)
+  ⎿  Wrote 59 lines to
+     app/src/main/java/net/liquidx/leman/data/remote/RunEventParser.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import kotlinx.serialization.json.Json
+       4 import kotlinx.serialization.json.booleanOrNull
+       5 import kotlinx.serialization.json.contentOrNull
+       6 import kotlinx.serialization.json.doubleOrNull
+       7 import kotlinx.serialization.json.jsonObject
+       8 import kotlinx.serialization.json.jsonPrimitive
+       9 import net.liquidx.leman.domain.model.RunEvent
+      10 import net.liquidx.leman.domain.model.TokenUsage
+     … +60 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/remote/SseReader.kt)
+  ⎿  Wrote 26 lines to
+     app/src/main/java/net/liquidx/leman/data/remote/SseReader.kt
+       1 package net.liquidx.leman.data.remote
+       3 import okio.BufferedSource
+       4 
+       5 /**
+         spec 02): no
+       7  * `id:`/`event:`/`retry:` lines, one JSON payload per `data:` l
+       8  * lines start with `:` (the stream ends with `: stream closed`)
+         . Standard SSE
+       9  * multi-line data accumulation is deliberately not implemented 
+      10  * never emits it, and a hand-rolled reader stays unit-testable.
+     … +22 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/remote/HermesClient.kt)
+  ⎿  Wrote 29 lines to
+     app/src/main/java/net/liquidx/leman/data/remote/HermesClient.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import kotlinx.coroutines.flow.Flow
+       5 import net.liquidx.leman.domain.model.RunEvent
+       6 
+       7 /**
+       8  * The only surface that knows the Hermes wire format (spec 01/0
+       9  * by [OkHttpHermesClient] in production and the in-process fake
+          in debug/tests.
+      10  */
+     … +27 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/remote/ErrorMapping.kt)
+  ⎿  Wrote 32 lines to
+     app/src/main/java/net/liquidx/leman/data/remote/ErrorMapping.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import net.liquidx.leman.domain.model.ApiError
+       4 import java.io.IOException
+       5 import java.io.InterruptedIOException
+       7 import okhttp3.Response
+       8 
+       9 /** Everything thrown by OkHttp/serialization maps into [ApiErro
+         r] (spec 04). */
+      10 fun mapException(e: Exception): ApiError = when (e) {
+     … +28 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/remote/OkHttpHermesClient.kt)
+  ⎿  Wrote 177 lines to
+     app/src/main/java/net/liquidx/leman/data/remote/OkHttpHermesClient.kt
+       1 package net.liquidx.leman.data.remote
+       2 
+       3 import java.util.concurrent.TimeUnit
+       4 import kotlinx.coroutines.Dispatchers
+       5 import kotlinx.coroutines.flow.Flow
+       6 import kotlinx.coroutines.flow.flow
+       7 import kotlinx.coroutines.flow.flowOn
+       8 import kotlinx.serialization.KSerializer
+       9 import kotlinx.serialization.builtins.ListSerializer
+      10 import kotlinx.serialization.builtins.serializer
+     … +191 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ All 32 wire-layer tests pass. Committing and moving to the local stores:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Task 6–7. Checking the existing backup rules first, then writing tests:
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/local/DaoTest.kt)
+  ⎿  Wrote 96 lines to
+     app/src/test/java/net/liquidx/leman/data/local/DaoTest.kt
+       1 package net.liquidx.leman.data.local
+       2 
+       3 import androidx.room.Room
+       4 import androidx.test.core.app.ApplicationProvider
+       5 import kotlinx.coroutines.flow.first
+       6 import kotlinx.coroutines.test.runTest
+       7 import org.junit.After
+       8 import org.junit.Assert.assertEquals
+       9 import org.junit.Assert.assertNull
+      10 import org.junit.Before
+     … +102 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/local/LocalMappingTest.kt)
+  ⎿  Wrote 53 lines to
+     app/src/test/java/net/liquidx/leman/data/local/LocalMappingTest.kt
+       1 package net.liquidx.leman.data.local
+       2 
+       3 import net.liquidx.leman.domain.model.SendState
+       4 import net.liquidx.leman.domain.model.ThreadState
+       5 import net.liquidx.leman.domain.model.Trace
+       6 import net.liquidx.leman.domain.model.TraceStep
+       7 import net.liquidx.leman.domain.model.TurnKind
+       8 import org.junit.Assert.assertEquals
+       9 import org.junit.Assert.assertNull
+      10 import org.junit.Test
+     … +48 lines (ctrl+o to expand)
+⏺ Write(app/src/test/java/net/liquidx/leman/data/settings/SettingsStoreTest.kt)
+  ⎿  Wrote 58 lines to
+     app/src/test/java/net/liquidx/leman/data/settings/SettingsStoreTest.kt
+       1 package net.liquidx.leman.data.settings
+       2 
+       3 import androidx.test.core.app.ApplicationProvider
+       4 import kotlinx.coroutines.flow.first
+       5 import kotlinx.coroutines.test.runTest
+       6 import net.liquidx.leman.domain.model.Settings
+       7 import org.junit.Assert.assertEquals
+       8 import org.junit.Test
+       9 import org.junit.runner.RunWith
+      10 import org.robolectric.RobolectricTestRunner
+     … +51 lines (ctrl+o to expand)
+
+⏺ Now the implementations. First, domain Trace needs @Serializable for the JSON
+  columns, and unit tests need androidx.test core:
+
+⏺ API Error: Connection closed mid-response. The response above may be 
+  incomplete.
+
+✻ Baked for 24m 30s · done Wednesday, Jul 15 at 9:41 AM
+
+❯ continue                                                                      
+
+⏺ Continuing Task 6–7: implementing the Room store, mappers, and settings
+  stores.
+
+⏺ Update(app/src/main/java/net/liquidx/leman/domain/model/Models.kt)
+  ⎿  Added 6 lines, removed 1 line
+      50      val viaButton: Boolean,
+      51  )
+      52  
+      53 -/** A finalized thinking trace, composed client-side from run e
+         -vents (spec 05). */                                            
+      53 +/**                                                            
+      54 + * A finalized thinking trace, composed client-side from run ev
+         +ents (spec 05).                                                
+      55 + * Serializable because it persists as one JSON column on the t
+         +urn (spec 03).                                                 
+      56 + */                                                            
+      57 +@kotlinx.serialization.Serializable                            
+      58  data class Trace(
+      59      val reasoning: String?,
+      60      val steps: List<TraceStep>,
+      61  )
+      62  
+      63 +@kotlinx.serialization.Serializable                            
+      64  data class TraceStep(
+      65      val tool: String,
+      66      val preview: String?,
+
+⏺ Update(app/build.gradle.kts)
+  ⎿  Added 1 line
+      85      implementation(libs.commonmark.ext.gfm.strikethrough)
+      86  
+      87      testImplementation(libs.junit)
+      88 +    testImplementation(libs.androidx.junit)                    
+      89      testImplementation(libs.kotlinx.coroutines.test)
+      90      testImplementation(libs.turbine)
+      91      testImplementation(libs.okhttp.mockwebserver)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/local/Entities.kt)
+  ⎿  Wrote 48 lines to
+     app/src/main/java/net/liquidx/leman/data/local/Entities.kt
+       1 package net.liquidx.leman.data.local
+       2 
+       3 import androidx.room.Entity
+       4 import androidx.room.ForeignKey
+       5 import androidx.room.Index
+       7 
+       8 /** Room is primary storage, not a cache — the gateway has no th
+         read store (spec 03). */
+       9 @Entity(tableName = "threads")
+      10 data class ThreadEntity(
+     … +51 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/local/Daos.kt)
+  ⎿  Wrote 57 lines to
+     app/src/main/java/net/liquidx/leman/data/local/Daos.kt
+       1 package net.liquidx.leman.data.local
+       2 
+       3 import androidx.room.Dao
+       4 import androidx.room.Query
+       5 import androidx.room.Upsert
+       7 
+       8 @Dao
+       9 interface ThreadDao {
+      10     @Query("SELECT * FROM threads ORDER BY pinned DESC, lastActi
+         veAt DESC")
+     … +48 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/local/LemanDatabase.kt)
+  ⎿  Wrote 25 lines to
+     app/src/main/java/net/liquidx/leman/data/local/LemanDatabase.kt
+       1 package net.liquidx.leman.data.local
+       2 
+       3 import android.content.Context
+       4 import androidx.room.Database
+       5 import androidx.room.Room
+       6 import androidx.room.RoomDatabase
+       7 
+       8 @Database(
+       9     entities = [ThreadEntity::class, TurnEntity::class],
+      10     version = 1,
+     … +18 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/local/LocalMapping.kt)
+  ⎿  Wrote 96 lines to
+     app/src/main/java/net/liquidx/leman/data/local/LocalMapping.kt
+      1 package net.liquidx.leman.data.local
+      2 
+      3 import kotlinx.serialization.json.Json
+      4 import net.liquidx.leman.domain.model.SendState
+      5 import net.liquidx.leman.domain.model.Thread
+      6 import net.liquidx.leman.domain.model.ThreadState
+      7 import net.liquidx.leman.domain.model.Trace
+      8 import net.liquidx.leman.domain.model.Turn
+      9 import net.liquidx.leman.domain.model.TurnKind
+     … +89 lines (ctrl+o to expand)
+
+⏺ Now the settings stores:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/settings/SettingsStore.kt)
+  ⎿  Wrote 72 lines to
+     app/src/main/java/net/liquidx/leman/data/settings/SettingsStore.kt
+       1 package net.liquidx.leman.data.settings
+       2 
+       3 import android.content.Context
+       4 import androidx.datastore.core.DataStore
+       5 import androidx.datastore.preferences.core.PreferenceDataStoreFa
+       6 import androidx.datastore.preferences.core.Preferences
+       7 import androidx.datastore.preferences.core.booleanPreferencesKey
+       8 import androidx.datastore.preferences.core.edit
+       9 import androidx.datastore.preferences.core.stringPreferencesKey
+      10 import java.io.File
+     … +74 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/settings/ApiKeyStore.kt)
+  ⎿  Wrote 105 lines to
+     app/src/main/java/net/liquidx/leman/data/settings/ApiKeyStore.kt
+       1 package net.liquidx.leman.data.settings
+       2 
+       3 import android.content.Context
+       5 import android.security.keystore.KeyPermanentlyInvalidatedExcept
+         ion
+       6 import android.security.keystore.KeyProperties
+       7 import android.util.Base64
+       9 import androidx.datastore.preferences.core.PreferenceDataStoreFa
+         ctory
+      10 import androidx.datastore.preferences.core.Preferences
+     … +110 lines (ctrl+o to expand)
+
+⏺ Updating backup rules to exclude the key file, and wiring the auth-required
+  key variant per spec 03:
+
+⏺ Write(app/src/main/res/xml/backup_rules.xml)
+  ⎿  Error writing file
+
+⏺ Write(app/src/main/res/xml/data_extraction_rules.xml)
+  ⎿  Error writing file
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Write(app/src/main/res/xml/backup_rules.xml)
+  ⎿  Added 6 lines, removed 12 lines
+       1 -<?xml version="1.0" encoding="utf-8"?><!--                     
+       2 -   Sample backup rules file; uncomment and customize as necessa
+         -ry.                                                            
+       3 -   See https://developer.android.com/guide/topics/data/autoback
+         -up                                                             
+       4 -   for details.                                                
+       5 -   Note: This file is ignored for devices older than API 31    
+       6 -   See https://developer.android.com/about/versions/12/backup-r
+         -estore                                                         
+       7 --->                                                            
+       1 +<?xml version="1.0" encoding="utf-8"?>                         
+       2 +<!-- The encrypted API key never leaves the device: "key stored
+         + in secure                                                     
+       3 +     enclave · never synced" (spec 03). Thread data is ordinary
+         + app storage;                                                  
+       4 +     the user exports it explicitly from 2d. -->               
+       5  <full-backup-content>
+       9 -    <!--                                                       
+      10 -   <include domain="sharedpref" path="."/>                     
+      11 -   <exclude domain="sharedpref" path="device.xml"/>            
+      12 --->                                                            
+      13 -</full-backup-content>                                         
+       6   No newline at end of file
+       7 +    <exclude domain="file" path="datastore/apikey.preferences_p
+         +b" />                                                          
+       8 +</full-backup-content>                                         
+
+⏺ Write(app/src/main/res/xml/data_extraction_rules.xml)
+  ⎿  Added 6 lines, removed 14 lines
+       1 -<?xml version="1.0" encoding="utf-8"?><!--                     
+       2 -   Sample data extraction rules file; uncomment and customize a
+         -s necessary.                                                   
+       3 -   See https://developer.android.com/about/versions/12/backup-r
+         -estore#xml-changes                                             
+       4 -   for details.                                                
+       5 --->                                                            
+       1 +<?xml version="1.0" encoding="utf-8"?>                         
+       2 +<!-- See backup_rules.xml — the encrypted API key is excluded f
+         +rom both cloud                                                 
+       3 +     backup and device-to-device transfer (spec 03). -->       
+       4  <data-extraction-rules>
+       5      <cloud-backup>
+       8 -        <!-- TODO: Use <include> and <exclude> to control what 
+         -is backed up.                                                  
+       9 -        <include .../>                                         
+      10 -        <exclude .../>                                         
+      11 -        -->                                                    
+       6 +        <exclude domain="file" path="datastore/apikey.preferenc
+         +es_pb" />                                                      
+       7      </cloud-backup>
+      13 -    <!--                                                       
+       8      <device-transfer>
+      15 -        <include .../>                                         
+      16 -        <exclude .../>                                         
+       9 +        <exclude domain="file" path="datastore/apikey.preferenc
+         +es_pb" />                                                      
+      10      </device-transfer>
+      18 -    -->                                                        
+      19 -</data-extraction-rules>                                       
+      11   No newline at end of file
+      12 +</data-extraction-rules>                                       
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ Write(app/src/test/resources/robolectric.properties)
+  ⎿  Wrote 3 lines to app/src/test/resources/robolectric.properties
+      1 # Robolectric 4.15 supports up to SDK 35; targetSdk is 36. Pin th
+        e simulated
+      2 # SDK until a Robolectric release adds 36.
+      3 sdk=35
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/domain/model/Models.kt)
+  ⎿  Added 11 lines, removed 5 lines
+      52  
+      53  /**
+      54   * A finalized thinking trace, composed client-side from run ev
+          ents (spec 05).
+      55 + * Ordered steps of tool calls and reasoning rows — the design'
+         +s trace table.                                                 
+      56   * Serializable because it persists as one JSON column on the t
+          urn (spec 03).
+      57   */
+      58  @kotlinx.serialization.Serializable
+      59  data class Trace(
+      59 -    val reasoning: String?,                                    
+      60      val steps: List<TraceStep>,
+      61  )
+      62  
+      63  @kotlinx.serialization.Serializable
+      64 +enum class TraceStepKind { Tool, Reasoning }                   
+      65 +                                                               
+      66 +@kotlinx.serialization.Serializable                            
+      67  data class TraceStep(
+      65 -    val tool: String,                                          
+      66 -    val preview: String?,                                      
+      67 -    val durationSeconds: Double,                               
+      68 -    val error: Boolean,                                        
+      68 +    val kind: TraceStepKind,                                   
+      69 +    /** Tool name for [TraceStepKind.Tool] steps; null for reas
+         +oning rows. */                                                 
+      70 +    val tool: String? = null,                                  
+      71 +    /** Tool args/query preview, or the reasoning text. */     
+      72 +    val summary: String? = null,                               
+      73 +    val durationSeconds: Double = 0.0,                         
+      74 +    val error: Boolean = false,                                
+      75  )
+      76  
+      77  data class TokenUsage(
+⏺ Update(app/src/test/java/net/liquidx/leman/data/local/LocalMappingTest.kt)
+  ⎿  Added 3 lines, removed 3 lines
+      14      @Test
+      15      fun traceJson_roundTrips() {
+      16          val trace = Trace(
+      17 -            reasoning = "thinking about ci",                   
+      17              steps = listOf(
+      19 -                TraceStep("ci.logs", "fetch last 20 runs", 5.93
+         -9, false),                                                     
+      20 -                TraceStep("repo.search", null, 3.2, true),     
+      18 +                TraceStep(TraceStepKind.Reasoning, summary = "t
+         +hinking about ci"),                                            
+      19 +                TraceStep(TraceStepKind.Tool, tool = "ci.logs",
+         + summary = "fetch last 20 runs", durationSeconds = 5.939),     
+      20 +                TraceStep(TraceStepKind.Tool, tool = "repo.sear
+         +ch", summary = null, durationSeconds = 3.2, error = true),     
+      21              ),
+      22          )
+      23          assertEquals(trace, decodeTrace(encodeTrace(trace)))
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/local/LocalMappingTest.kt)
+  ⎿  Added 1 line
+       4  import net.liquidx.leman.domain.model.ThreadState
+       5  import net.liquidx.leman.domain.model.Trace
+       6  import net.liquidx.leman.domain.model.TraceStep
+       7 +import net.liquidx.leman.domain.model.TraceStepKind            
+       8  import net.liquidx.leman.domain.model.TurnKind
+       9  import org.junit.Assert.assertEquals
+      10  import org.junit.Assert.assertNull
+
+⏺ Now the tests for Backoff, TraceComposer, ConnectionManager, and the
+  repository, plus the shared fake client:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/repo/BackoffTest.kt)
+  ⎿  Wrote 38 lines to
+     app/src/test/java/net/liquidx/leman/data/repo/BackoffTest.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import kotlin.random.Random
+       4 import org.junit.Assert.assertEquals
+       5 import org.junit.Assert.assertTrue
+       6 import org.junit.Test
+       7 
+       8 class BackoffTest {
+       9 
+      10     @Test
+     … +31 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/domain/TraceComposerTest.kt)
+  ⎿  Wrote 112 lines to
+     app/src/test/java/net/liquidx/leman/domain/TraceComposerTest.kt
+       1 package net.liquidx.leman.domain
+       2 
+       3 import net.liquidx.leman.domain.model.RunEvent
+       4 import net.liquidx.leman.domain.model.TraceStepKind
+       5 import org.junit.Assert.assertEquals
+       6 import org.junit.Assert.assertNull
+       7 import org.junit.Assert.assertTrue
+       8 import org.junit.Test
+       9 
+      10 class TraceComposerTest {
+     … +122 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/testutil/FakeHermesClient.kt)
+  ⎿  Wrote 94 lines to
+     app/src/test/java/net/liquidx/leman/testutil/FakeHermesClient.kt
+       1 package net.liquidx.leman.testutil
+       2 
+       3 import kotlinx.coroutines.flow.Flow
+       4 import kotlinx.coroutines.flow.flow
+       5 import net.liquidx.leman.data.remote.HealthDto
+       6 import net.liquidx.leman.data.remote.HermesClient
+       7 import net.liquidx.leman.data.remote.RunAcceptedDto
+       8 import net.liquidx.leman.data.remote.RunDto
+       9 import net.liquidx.leman.data.remote.WireMessage
+      10 import net.liquidx.leman.domain.model.ApiResult
+     … +91 lines (ctrl+o to expand)
+
+⏺ API Error: Unable to connect to API (ConnectionRefused)
+
+✻ Cooked for 1h 37m 20s · done Wednesday, Jul 15 at 3:52 PM
+
+❯ continue                                                                      
+
+⏺ Continuing with the ConnectionManager and repository tests, then the
+  implementations. First, safer defaults in the fake:
+
+⏺ Update(app/src/test/java/net/liquidx/leman/testutil/FakeHermesClient.kt)
+  ⎿  Added 10 lines, removed 2 lines
+      50  
+      51      override suspend fun getRun(id: String): ApiResult<RunDto> 
+          {
+      52          getRunCalls++
+      53 -        return if (getRunResults.size > 1) getRunResults.remove
+         -First() else getRunResults.first()                             
+      53 +        return when {                                          
+      54 +            getRunResults.isEmpty() -> ApiResult.Ok(runDto("run
+         +ning"))                                                        
+      55 +            getRunResults.size > 1 -> getRunResults.removeFirst
+         +()                                                             
+      56 +            else -> getRunResults.first()                      
+      57 +        }                                                      
+      58      }
+      59  
+      60      override fun runEvents(id: String): Flow<RunEvent> = flow {
+      61          streamOpens++
+      58 -        val script = if (eventScripts.size > 1) eventScripts.re
+         -moveFirst() else eventScripts.first()                          
+      62 +        val script = when {                                    
+      63 +            eventScripts.isEmpty() -> emptyList()              
+      64 +            eventScripts.size > 1 -> eventScripts.removeFirst()
+      65 +            else -> eventScripts.first()                       
+      66 +        }                                                      
+      67          for (item in script) {
+      68              when (item) {
+      69                  is RunEvent -> emit(item)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/repo/ConnectionManagerTest.kt)
+  ⎿  Wrote 94 lines to
+     app/src/test/java/net/liquidx/leman/data/repo/ConnectionManagerTest.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import app.cash.turbine.test
+       4 import java.io.IOException
+       5 import kotlin.random.Random
+       6 import kotlinx.coroutines.flow.flowOf
+       7 import kotlinx.coroutines.test.advanceUntilIdle
+       8 import kotlinx.coroutines.test.runTest
+       9 import net.liquidx.leman.domain.model.ApiError
+      10 import net.liquidx.leman.domain.model.ApiResult
+     … +94 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/repo/ThreadRepositoryTest.kt)
+  ⎿  Wrote 385 lines to
+     app/src/test/java/net/liquidx/leman/data/repo/ThreadRepositoryTest.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import androidx.room.Room
+       4 import androidx.test.core.app.ApplicationProvider
+       5 import java.io.IOException
+       6 import kotlin.random.Random
+       7 import kotlinx.coroutines.flow.first
+       8 import kotlinx.coroutines.test.advanceUntilIdle
+       9 import kotlinx.coroutines.test.runTest
+      10 import net.liquidx.leman.data.local.LemanDatabase
+     … +432 lines (ctrl+o to expand)
+
+⏺ Now the four implementations — Backoff, TraceComposer, ConnectionManager,
+  ThreadRepository:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/repo/Backoff.kt)
+  ⎿  Wrote 24 lines to
+     app/src/main/java/net/liquidx/leman/data/repo/Backoff.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import kotlin.random.Random
+       4 
+       5 /** Exponential backoff 1s → 30s cap, ±20% jitter, reset on succ
+       6 class Backoff(
+       7     private val baseMillis: Long = 1_000,
+       8     private val capMillis: Long = 30_000,
+       9     private val jitterFraction: Double = 0.2,
+      10     private val random: Random = Random.Default,
+     … +17 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/domain/TraceComposer.kt)
+  ⎿  Wrote 81 lines to
+     app/src/main/java/net/liquidx/leman/domain/TraceComposer.kt
+       1 package net.liquidx.leman.domain
+       2 
+       3 import net.liquidx.leman.domain.model.RunEvent
+       5 import net.liquidx.leman.domain.model.TraceStep
+       6 import net.liquidx.leman.domain.model.TraceStepKind
+       7 
+       8 /**
+         ed`/`tool.completed`
+      10  * pair is one tool step (FIFO-matched per tool name); `reasonin
+         g.available`
+     … +83 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/repo/ConnectionManager.kt)
+  ⎿  Wrote 93 lines to
+     app/src/main/java/net/liquidx/leman/data/repo/ConnectionManager.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import kotlinx.coroutines.CoroutineScope
+       4 import kotlinx.coroutines.Job
+       5 import kotlinx.coroutines.delay
+       6 import kotlinx.coroutines.flow.Flow
+       7 import kotlinx.coroutines.flow.MutableStateFlow
+       8 import kotlinx.coroutines.flow.StateFlow
+       9 import kotlinx.coroutines.flow.asStateFlow
+      10 import kotlinx.coroutines.flow.first
+     … +93 lines (ctrl+o to expand)
+
+⏺ Now the repository — the heart of the run lifecycle:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/data/repo/ThreadRepository.kt)
+  ⎿  Wrote 465 lines to
+     app/src/main/java/net/liquidx/leman/data/repo/ThreadRepository.kt
+       1 package net.liquidx.leman.data.repo
+       2 
+       3 import java.util.UUID
+       4 import kotlinx.coroutines.CoroutineScope
+       5 import kotlinx.coroutines.Job
+       6 import kotlinx.coroutines.delay
+       7 import kotlinx.coroutines.flow.Flow
+       8 import kotlinx.coroutines.flow.MutableStateFlow
+       9 import kotlinx.coroutines.flow.StateFlow
+      10 import kotlinx.coroutines.flow.asStateFlow
+     … +530 lines (ctrl+o to expand)
+
+⏺ Cleaning up a leftover scaffold in exportJson:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/repo/ThreadRepository.kt)
+  ⎿  Removed 13 lines
+      177  
+      178      /** Local store → share-sheet JSON; the app is the only pl
+           ace this data exists (spec 03). */
+      179      suspend fun exportJson(): String {
+      180 -        val threads = threadDao.observeThreads()              
+      181 -        val out = buildJsonObject {                           
+      182 -            put("exported_at", clock())                       
+      183 -            put(                                              
+      184 -                "threads",                                    
+      185 -                buildJsonArray {                              
+      186 -                    for (thread in db.threadDao().let { dao ->
+          - dao.observeThreads() }.let { emptyList<ThreadEntity>() }) {  
+      187 -                        // replaced below — kept for structure
+      188 -                    }                                         
+      189 -                },                                            
+      190 -            )                                                 
+      191 -        }                                                     
+      192 -        // Simple explicit assembly (avoids flow collection ab
+          -ove):                                                         
+      180          val threadRows = buildJsonArray {
+      181              for (t in allThreads()) {
+      182                  add(
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/repo/ThreadRepository.kt)
+  ⎿  Added 2 lines, removed 6 lines
+      215          }.toString()
+      216      }
+      217  
+      218 -    private suspend fun allThreads(): List<ThreadEntity> {    
+      219 -        val result = mutableListOf<ThreadEntity>()            
+      220 -        // one-shot read of the observable query              
+      221 -        kotlinx.coroutines.flow.first(threadDao.observeThreads
+          -()).let(result::addAll)                                       
+      222 -        return result                                         
+      223 -    }                                                         
+      218 +    private suspend fun allThreads(): List<ThreadEntity> =    
+      219 +        kotlinx.coroutines.flow.first(threadDao.observeThreads
+          +())                                                           
+      220  
+      221      /**
+      222       * On thread open / process restart: a thread stuck `runni
+           ng` with a synced
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/data/repo/ThreadRepository.kt)
+  ⎿  Added 1 line, removed 2 lines
+      215          }.toString()
+      216      }
+      217  
+      218 -    private suspend fun allThreads(): List<ThreadEntity> =    
+      219 -        kotlinx.coroutines.flow.first(threadDao.observeThreads
+          -())                                                           
+      218 +    private suspend fun allThreads(): List<ThreadEntity> = thr
+          +eadDao.observeThreads().first()                               
+      219  
+      220      /**
+      221       * On thread open / process restart: a thread stuck `runni
+           ng` with a synced
+⏺ Update(app/src/main/java/net/liquidx/leman/data/repo/ThreadRepository.kt)
+  ⎿  Added 1 line
+       8  import kotlinx.coroutines.flow.MutableStateFlow
+       9  import kotlinx.coroutines.flow.StateFlow
+      10  import kotlinx.coroutines.flow.asStateFlow
+      11 +import kotlinx.coroutines.flow.first                           
+      12  import kotlinx.coroutines.flow.map
+      13  import kotlinx.coroutines.flow.update
+      14  import kotlinx.coroutines.launch
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/repo/ThreadRepositoryTest.kt)
+  ⎿  Added 1 line, removed 1 line
+      292          val threadId = repo.createThread("q")
+      293  
+      294          var sawStreaming = false
+      295 -        val job = kotlinx.coroutines.launch {                 
+      295 +        val job = backgroundScope.launch {                    
+      296              repo.streaming.collect { map ->
+      297                  map[threadId]?.let {
+      298                      if (it.text == "live text" && it.trace?.st
+           eps?.size == 1) sawStreaming = true
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/repo/ThreadRepositoryTest.kt)
+  ⎿  Added 1 line
+       5  import java.io.IOException
+       6  import kotlin.random.Random
+       7  import kotlinx.coroutines.flow.first
+       8 +import kotlinx.coroutines.launch                               
+       9  import kotlinx.coroutines.test.advanceUntilIdle
+      10  import kotlinx.coroutines.test.runTest
+      11  import net.liquidx.leman.data.local.LemanDatabase
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ Let me debug this directly — adding a diagnostic to see what state the manager
+  lands in:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ The launched coroutine never ran at all (healthCalls=0). Testing whether
+  backgroundScope is the culprit vs the TestScope itself:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ That 1s build may have been cached. Forcing a rerun:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/data/repo/ConnectionManagerTest.kt)
+  ⎿  Added 31 lines, removed 9 lines
+       3  import app.cash.turbine.test
+       4  import java.io.IOException
+       5  import kotlin.random.Random
+       6 +import kotlinx.coroutines.CoroutineScope                       
+       7 +import kotlinx.coroutines.cancel                               
+       8  import kotlinx.coroutines.flow.flowOf
+       9 +import kotlinx.coroutines.test.StandardTestDispatcher          
+      10 +import kotlinx.coroutines.test.TestScope                       
+      11 +import kotlinx.coroutines.test.advanceTimeBy                   
+      12  import kotlinx.coroutines.test.advanceUntilIdle
+      13 +import kotlinx.coroutines.test.runCurrent                      
+      14  import kotlinx.coroutines.test.runTest
+      15  import net.liquidx.leman.domain.model.ApiError
+      16  import net.liquidx.leman.domain.model.ApiResult
+     ...
+      23  
+      24  class ConnectionManagerTest {
+      25  
+      26 +    // NOTE: backgroundScope tasks are not driven by advanceUnt
+         +ilIdle, so the                                                 
+      27 +    // manager gets its own scope on the shared test scheduler.
+      28 +    private fun TestScope.managerScope() = CoroutineScope(Stand
+         +ardTestDispatcher(testScheduler))                              
+      29 +                                                               
+      30      private fun manager(
+      21 -        scope: kotlinx.coroutines.CoroutineScope,              
+      31 +        scope: CoroutineScope,                                 
+      32          client: FakeHermesClient,
+      33          apiKey: String? = "key",
+      34      ) = ConnectionManager(
+     ...
+      41  
+      42      @Test
+      43      fun reconfigure_noKey_goesNotConfigured_withoutProbing() = 
+          runTest {
+      44 +        val scope = managerScope()                             
+      45          val client = FakeHermesClient()
+      35 -        val cm = manager(backgroundScope, client, apiKey = null
+         -)                                                              
+      46 +        val cm = manager(scope, client, apiKey = null)         
+      47          cm.reconfigure()
+      48          advanceUntilIdle()
+      49          assertEquals(ConnState.NotConfigured, cm.state.value)
+      50          assertEquals(0, client.healthCalls)
+      51 +        scope.cancel()                                         
+      52      }
+      53  
+      54      @Test
+      55      fun reconfigure_healthOk_transitionsCheckingThenOnline() = 
+          runTest {
+      56 +        val scope = managerScope()                             
+      57          val client = FakeHermesClient()
+      45 -        val cm = manager(backgroundScope, client)              
+      58 +        val cm = manager(scope, client)                        
+      59          cm.state.test {
+      60              assertEquals(ConnState.NotConfigured, awaitItem())
+      61              cm.reconfigure()
+     ...
+       63              assertEquals(ConnState.Online("0.18.0"), awaitItem
+           ())
+       64          }
+       65          assertEquals(listOf<Pair<String?, String?>>(Settings.D
+           EFAULT_SERVER_URL to "key"), client.reconfigureCalls)
+       66 +        scope.cancel()                                        
+       67      }
+       68  
+       69      @Test
+       70      fun probe_authFailure_goesUnauthorized_andDoesNotRetry() =
+            runTest {
+       71 +        val scope = managerScope()                            
+       72          val client = FakeHermesClient()
+       73          client.healthResult = ApiResult.Err(ApiError.Auth(401)
+           )
+       59 -        val cm = manager(backgroundScope, client)             
+       74 +        val cm = manager(scope, client)                       
+       75          cm.reconfigure()
+       76          advanceUntilIdle()
+       77          assertTrue(cm.state.value is ConnState.Unauthorized)
+       78          val calls = client.healthCalls
+       64 -        advanceUntilIdle()                                    
+       79 +        advanceTimeBy(120_000)                                
+       80 +        runCurrent()                                          
+       81          assertEquals(calls, client.healthCalls) // no retry lo
+           op for auth
+       82 +        scope.cancel()                                        
+       83      }
+       84  
+       85      @Test
+       86      fun probe_networkFailure_goesOffline_thenRetriesWithBackof
+           fUntilOnline() = runTest {
+       87 +        val scope = managerScope()                            
+       88          val client = FakeHermesClient()
+       89          client.healthResult = ApiResult.Err(ApiError.Network(I
+           OException("down")))
+       72 -        val cm = manager(backgroundScope, client)             
+       90 +        val cm = manager(scope, client)                       
+       91          cm.reconfigure()
+       74 -        advanceUntilIdle()                                    
+       92 +        runCurrent()                                          
+       93          assertTrue(cm.state.value is ConnState.Offline)
+       94          val failedCalls = client.healthCalls
+       95  
+       96          client.healthResult = ApiResult.Ok(net.liquidx.leman.d
+           ata.remote.HealthDto("ok", "hermes-agent", "0.19.0"))
+       79 -        advanceUntilIdle() // virtual-time backoff elapses, re
+          -try probes again                                              
+       97 +        advanceTimeBy(2_000) // backoff base 1s ±20% elapses  
+       98 +        runCurrent()                                          
+       99          assertEquals(ConnState.Online("0.19.0"), cm.state.valu
+           e)
+      100          assertTrue(client.healthCalls > failedCalls)
+      101 +        scope.cancel()                                        
+      102      }
+      103  
+      104      @Test
+      105      fun onAuthFailure_fromARun_flipsGlobalStateToUnauthorized(
+           ) = runTest {
+      106 +        val scope = managerScope()                            
+      107          val client = FakeHermesClient()
+       87 -        val cm = manager(backgroundScope, client)             
+      108 +        val cm = manager(scope, client)                       
+      109          cm.reconfigure()
+      110          advanceUntilIdle()
+      111          assertEquals(ConnState.Online("0.18.0"), cm.state.valu
+           e)
+      112          cm.onAuthFailure(401)
+      113          assertTrue(cm.state.value is ConnState.Unauthorized)
+      114 +        scope.cancel()                                        
+      115      }
+      116  }
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/repo/ThreadRepositoryTest.kt)
+  ⎿  Added 15 lines, removed 6 lines
+      37  
+      38      @Before
+      39      fun setUp() {
+      40 -        db = Room.inMemoryDatabaseBuilder(                     
+      41 -            ApplicationProvider.getApplicationContext(),       
+      42 -            LemanDatabase::class.java,                         
+      43 -        ).allowMainThreadQueries().build()                     
+      40          client = FakeHermesClient()
+      41          authFailures = 0
+      42      }
+      43  
+      44      @After
+      49 -    fun tearDown() = db.close()                                
+      45 +    fun tearDown() {                                           
+      46 +        if (::db.isInitialized) db.close()                     
+      47 +    }                                                          
+      48  
+      49 +    /**                                                        
+      50 +     * The repo scope and Room's query context both run on the 
+         +test scheduler so                                              
+      51 +     * that advanceUntilIdle() drives the whole run lifecycle i
+         +n virtual time                                                 
+      52 +     * (backgroundScope tasks are not driven by advanceUntilIdl
+         +e; Room's default                                              
+      53 +     * executors are real threads).                            
+      54 +     */                                                        
+      55      private fun kotlinx.coroutines.test.TestScope.repo(): Threa
+          dRepository {
+      56 +        val dispatcher = kotlinx.coroutines.test.StandardTestDi
+         +spatcher(testScheduler)                                        
+      57 +        db = Room.inMemoryDatabaseBuilder(                     
+      58 +            ApplicationProvider.getApplicationContext(),       
+      59 +            LemanDatabase::class.java,                         
+      60 +        ).setQueryCoroutineContext(dispatcher).build()         
+      61          var id = 0
+      62          return ThreadRepository(
+      63              db = db,
+      64              client = client,
+      56 -            scope = backgroundScope,                           
+      65 +            scope = kotlinx.coroutines.CoroutineScope(dispatche
+         +r),                                                            
+      66              clock = { now },
+      67              newId = { "id-${id++}" },
+      68              backoffFactory = { Backoff(random = Random(1)) },
+
+⏺ Update(app/src/test/java/net/liquidx/leman/data/repo/ThreadRepositoryTest.kt)
+  ⎿  Added 4 lines, removed 1 line
+      302          val threadId = repo.createThread("q")
+      303  
+      304          var sawStreaming = false
+      305 -        val job = backgroundScope.launch {                    
+      305 +        val collectScope = kotlinx.coroutines.CoroutineScope( 
+      306 +            kotlinx.coroutines.test.StandardTestDispatcher(tes
+          +tScheduler),                                                  
+      307 +        )                                                     
+      308 +        val job = collectScope.launch {                       
+      309              repo.streaming.collect { map ->
+      310                  map[threadId]?.let {
+      311                      if (it.text == "live text" && it.trace?.st
+           eps?.size == 1) sawStreaming = true
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ All 35 tests green. Running the full suite and committing:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Task 11 — the theme. Writing colors, type, motion, modifiers, theme, plus the
+  glyph coverage test; removing the template theme files:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/theme/LemanColors.kt)
+  ⎿  Wrote 32 lines to
+     app/src/main/java/net/liquidx/leman/ui/theme/LemanColors.kt
+       1 package net.liquidx.leman.ui.theme
+       2 
+       3 import androidx.compose.ui.graphics.Color
+       4 
+       5 /** Exactly the handoff tokens (spec 06 / design system). */
+       6 object LemanColors {
+       7     val base = Color(0xFF08080A)
+       8     val surface = Color(0xFF0C0C10)
+       9     val accent = Color(0xFF6BA0D8)
+      10     val accentMuted = Color(0xFF5B7EA6)
+     … +25 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/theme/LemanType.kt)
+  ⎿  Wrote 67 lines to
+     app/src/main/java/net/liquidx/leman/ui/theme/LemanType.kt
+       1 package net.liquidx.leman.ui.theme
+       2 
+       3 import androidx.compose.ui.text.PlatformTextStyle
+       4 import androidx.compose.ui.text.TextStyle
+       5 import androidx.compose.ui.text.font.Font
+       6 import androidx.compose.ui.text.font.FontFamily
+       7 import androidx.compose.ui.text.font.FontWeight
+       8 import androidx.compose.ui.text.style.LineHeightStyle
+       9 import androidx.compose.ui.unit.em
+      10 import androidx.compose.ui.unit.sp
+     … +68 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/theme/LemanType.kt)
+  ⎿  Added 1 line
+      1  package net.liquidx.leman.ui.theme
+      2  
+      3 +import androidx.compose.ui.graphics.Color                       
+      4  import androidx.compose.ui.text.PlatformTextStyle
+      5  import androidx.compose.ui.text.TextStyle
+      6  import androidx.compose.ui.text.font.Font
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/theme/LemanType.kt)
+  ⎿  Removed 2 lines
+      64      /** 9sp/+0.14em — YOU / agent-name turn tags (2b). */
+      65      val turnTag = base.copy(fontSize = 9.sp, letterSpacing = 0.
+          14.em)
+      66  }
+      67 -                                                               
+      68 -private val Color = androidx.compose.ui.graphics.Color         
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/theme/LemanMotion.kt)
+  ⎿  Wrote 42 lines to
+     app/src/main/java/net/liquidx/leman/ui/theme/LemanMotion.kt
+       1 package net.liquidx.leman.ui.theme
+       2 
+       3 import androidx.compose.animation.EnterTransition
+       4 import androidx.compose.animation.fadeIn
+       5 import androidx.compose.animation.fadeOut
+       7 import androidx.compose.animation.core.CubicBezierEasing
+       8 import androidx.compose.animation.core.tween
+       9 
+      10 /** Sharp and mechanical, no bounce (spec 06 / design system). *
+         /
+     … +35 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/theme/Modifiers.kt)
+  ⎿  Wrote 107 lines to
+     app/src/main/java/net/liquidx/leman/ui/theme/Modifiers.kt
+       1 package net.liquidx.leman.ui.theme
+       2 
+       3 import android.graphics.BlurMaskFilter
+       4 import androidx.compose.foundation.IndicationNodeFactory
+       5 import androidx.compose.foundation.interaction.InteractionSource
+       6 import androidx.compose.foundation.interaction.PressInteraction
+       7 import androidx.compose.ui.Modifier
+       8 import androidx.compose.ui.draw.drawBehind
+       9 import androidx.compose.ui.geometry.Offset
+      10 import androidx.compose.ui.graphics.Color
+     … +113 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/theme/LemanTheme.kt)
+  ⎿  Wrote 42 lines to
+     app/src/main/java/net/liquidx/leman/ui/theme/LemanTheme.kt
+       1 package net.liquidx.leman.ui.theme
+       2 
+       3 import androidx.compose.foundation.LocalIndication
+       5 import androidx.compose.foundation.text.selection.LocalTextSelec
+         tionColors
+       6 import androidx.compose.foundation.text.selection.TextSelectionC
+         olors
+       8 import androidx.compose.material3.darkColorScheme
+       9 import androidx.compose.runtime.Composable
+      10 import androidx.compose.runtime.CompositionLocalProvider
+     … +38 lines (ctrl+o to expand)
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/theme/GlyphCoverageTest.kt)
+  ⎿  Wrote 35 lines to
+     app/src/test/java/net/liquidx/leman/ui/theme/GlyphCoverageTest.kt
+       1 package net.liquidx.leman.ui.theme
+       2 
+       3 import android.content.Context
+       4 import android.graphics.Paint
+       5 import androidx.core.content.res.ResourcesCompat
+       6 import androidx.test.core.app.ApplicationProvider
+       7 import net.liquidx.leman.R
+       8 import org.junit.Assert.assertTrue
+       9 import org.junit.Test
+      10 import org.junit.runner.RunWith
+     … +32 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Task 12–13 — markdown pipeline. Tests first for the parsing halves:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/test/resources/fixtures/markdown/torture.md)
+  ⎿  Wrote 53 lines to app/src/test/resources/fixtures/markdown/torture.md
+      1 # heading one
+      2 
+      3 a paragraph with **strong**, *emphasis*, `inline code`, [a link](
+        https://example.com), and ~~strikethrough~~.
+      4 
+      5 - top level bullet
+      6 - another bullet
+      7   - nested bullet
+      8     - deeper still
+      9 - back at top
+     … +46 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/markdown/BlockSegmenterTest.kt)
+  ⎿  Wrote 132 lines to
+     app/src/test/java/net/liquidx/leman/ui/markdown/BlockSegmenterTest.kt
+      1 package net.liquidx.leman.ui.markdown
+      2 
+      3 import net.liquidx.leman.data.remote.Fixtures
+      4 import net.liquidx.leman.domain.model.AgentBlock
+      5 import net.liquidx.leman.domain.model.TaskItemState
+      6 import org.junit.Assert.assertEquals
+      7 import org.junit.Assert.assertNull
+      8 import org.junit.Assert.assertTrue
+      9 import org.junit.Test
+     … +131 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/markdown/DiffClassifierTest.kt)
+  ⎿  Wrote 22 lines to
+     app/src/test/java/net/liquidx/leman/ui/markdown/DiffClassifierTest.kt
+       1 package net.liquidx.leman.ui.markdown
+       2 
+       3 import org.junit.Assert.assertEquals
+       4 import org.junit.Test
+       5 
+       7 
+       8     @Test
+       9     fun classify_prefixesMapToKinds() {
+      10         assertEquals(DiffLineKind.Added, classifyDiffLine("+    
+         retries: 2"))
+     … +17 lines (ctrl+o to expand)
+
+⏺ Now the segmenter and diff classifier implementations:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/markdown/DiffClassifier.kt)
+  ⎿  Wrote 19 lines to
+     app/src/main/java/net/liquidx/leman/ui/markdown/DiffClassifier.kt
+       1 package net.liquidx.leman.ui.markdown
+       2 
+       3 enum class DiffLineKind { Added, Removed, Hunk, Context }
+       4 
+       5 /** Line-prefix coloring for diff blocks (spec 05). */
+       6 fun classifyDiffLine(line: String): DiffLineKind = when {
+       7     line.startsWith("@@") -> DiffLineKind.Hunk
+       8     line.startsWith("+") -> DiffLineKind.Added
+       9     line.startsWith("-") -> DiffLineKind.Removed
+      10     else -> DiffLineKind.Context
+     … +11 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/markdown/BlockSegmenter.kt)
+  ⎿  Wrote 185 lines to
+     app/src/main/java/net/liquidx/leman/ui/markdown/BlockSegmenter.kt
+       1 package net.liquidx.leman.ui.markdown
+       2 
+       3 import net.liquidx.leman.domain.model.AgentBlock
+       4 import net.liquidx.leman.domain.model.OptionRow
+       5 import net.liquidx.leman.domain.model.TaskItem
+       7 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtensi
+         on
+       8 import org.commonmark.ext.gfm.tables.TableBlock
+       9 import org.commonmark.ext.gfm.tables.TableBody
+      10 import org.commonmark.ext.gfm.tables.TableCell
+     … +195 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/markdown/InlineText.kt)
+  ⎿  Wrote 80 lines to
+     app/src/main/java/net/liquidx/leman/ui/markdown/InlineText.kt
+       1 package net.liquidx.leman.ui.markdown
+       2 
+       3 import androidx.compose.ui.graphics.Color
+       4 import androidx.compose.ui.text.AnnotatedString
+       5 import androidx.compose.ui.text.LinkAnnotation
+       6 import androidx.compose.ui.text.SpanStyle
+       7 import androidx.compose.ui.text.TextLinkStyles
+       8 import androidx.compose.ui.text.buildAnnotatedString
+       9 import androidx.compose.ui.text.font.FontWeight
+      10 import androidx.compose.ui.text.style.TextDecoration
+     … +80 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/LemanButton.kt)
+  ⎿  Wrote 64 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/LemanButton.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.foundation.background
+       4 import androidx.compose.foundation.clickable
+       5 import androidx.compose.foundation.layout.padding
+       6 import androidx.compose.material3.Text
+       7 import androidx.compose.runtime.Composable
+       8 import androidx.compose.ui.Modifier
+       9 import androidx.compose.ui.graphics.Color
+      10 import androidx.compose.ui.tooling.preview.Preview
+     … +66 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/LemanButton.kt)
+  ⎿  Added 1 line, removed 1 line
+      37      val alpha = if (enabled) 1f else 0.45f
+      38      Text(
+      39          text = label,
+      40 -        style = LemanType.body.copy(fontSize = 11.5.let { andro
+         -idx.compose.ui.unit.TextUnit(it.toFloat(), androidx.compose.ui.
+         -unit.TextUnitType.Sp) }),                                      
+      40 +        style = LemanType.body.copy(fontSize = 11.5.sp),       
+      41          color = text.copy(alpha = text.alpha * alpha),
+      42          maxLines = 1,
+      43          softWrap = false,
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/LemanButton.kt)
+  ⎿  Added 1 line
+       9  import androidx.compose.ui.graphics.Color
+      10  import androidx.compose.ui.tooling.preview.Preview
+      11  import androidx.compose.ui.unit.dp
+      12 +import androidx.compose.ui.unit.sp                             
+      13  import net.liquidx.leman.ui.theme.LemanColors
+      14  import net.liquidx.leman.ui.theme.LemanType
+      15  import net.liquidx.leman.ui.theme.hairlineBorder
+
+⏺ Now CodeBlock and the other rich block components:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/CodeBlock.kt)
+  ⎿  Wrote 128 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/CodeBlock.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.foundation.background
+       4 import androidx.compose.foundation.clickable
+       5 import androidx.compose.foundation.horizontalScroll
+       6 import androidx.compose.foundation.layout.Column
+       7 import androidx.compose.foundation.layout.Row
+       8 import androidx.compose.foundation.layout.Spacer
+       9 import androidx.compose.foundation.layout.fillMaxWidth
+      10 import androidx.compose.foundation.layout.padding
+     … +125 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/RichBlocks.kt)
+  ⎿  Wrote 207 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/RichBlocks.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.animation.AnimatedVisibility
+       4 import androidx.compose.foundation.background
+       5 import androidx.compose.foundation.clickable
+       6 import androidx.compose.foundation.layout.Arrangement
+       7 import androidx.compose.foundation.layout.Column
+       8 import androidx.compose.foundation.layout.Row
+       9 import androidx.compose.foundation.layout.fillMaxWidth
+      10 import androidx.compose.foundation.layout.padding
+     … +229 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/RichBlocks.kt)
+  ⎿  Added 1 line
+      21  import androidx.compose.ui.semantics.stateDescription
+      22  import androidx.compose.ui.tooling.preview.Preview
+      23  import androidx.compose.ui.unit.dp
+      24 +import androidx.compose.ui.unit.sp                             
+      25  import net.liquidx.leman.domain.model.ActionButton
+      26  import net.liquidx.leman.domain.model.ActionKind
+      27  import net.liquidx.leman.domain.model.AgentBlock
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/RichBlocks.kt)
+  ⎿  Removed 2 lines
+      166      }
+      167  }
+      168  
+      169 -private val Int.sp get() = androidx.compose.ui.unit.TextUnit(t
+          -oFloat(), androidx.compose.ui.unit.TextUnitType.Sp)           
+      170 -                                                              
+      169  @Preview(showBackground = true, backgroundColor = 0xFF08080A)
+      170  @Composable
+      171  private fun RichBlocksPreview() {
+
+⏺ Now MarkdownBody itself — the node-mapping renderer:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/markdown/MarkdownBody.kt)
+  ⎿  Wrote 193 lines to
+     app/src/main/java/net/liquidx/leman/ui/markdown/MarkdownBody.kt
+       1 package net.liquidx.leman.ui.markdown
+       2 
+       3 import androidx.compose.foundation.layout.Arrangement
+       4 import androidx.compose.foundation.layout.Box
+       5 import androidx.compose.foundation.layout.Column
+       6 import androidx.compose.foundation.layout.Row
+       7 import androidx.compose.foundation.layout.fillMaxWidth
+       8 import androidx.compose.foundation.layout.height
+       9 import androidx.compose.foundation.layout.padding
+      10 import androidx.compose.foundation.layout.width
+     … +206 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/CodeBlock.kt)
+  ⎿  Removed 1 line
+       8  import androidx.compose.foundation.layout.Spacer
+       9  import androidx.compose.foundation.layout.fillMaxWidth
+      10  import androidx.compose.foundation.layout.padding
+      11 -import androidx.compose.foundation.layout.weight               
+      11  import androidx.compose.foundation.rememberScrollState
+      12  import androidx.compose.material3.Text
+      13  import androidx.compose.runtime.Composable
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Task 14 — the component catalog. Writing the shared chrome first:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/icons/TablerIcons.kt)
+  ⎿  Wrote 69 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/icons/TablerIcons.kt
+      1 package net.liquidx.leman.ui.components.icons
+      2 
+      3 import androidx.compose.ui.graphics.Color
+      4 import androidx.compose.ui.graphics.SolidColor
+      5 import androidx.compose.ui.graphics.StrokeCap
+      6 import androidx.compose.ui.graphics.StrokeJoin
+      7 import androidx.compose.ui.graphics.vector.ImageVector
+      8 import androidx.compose.ui.graphics.vector.addPathNodes
+      9 import androidx.compose.ui.unit.dp
+     … +72 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/Chrome.kt)
+  ⎿  Wrote 246 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/Chrome.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.foundation.Canvas
+       4 import androidx.compose.foundation.clickable
+       5 import androidx.compose.foundation.layout.Arrangement
+       6 import androidx.compose.foundation.layout.Box
+       7 import androidx.compose.foundation.layout.Column
+       8 import androidx.compose.foundation.layout.ColumnScope
+       9 import androidx.compose.foundation.layout.Row
+      10 import androidx.compose.foundation.layout.RowScope
+     … +268 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Chrome.kt)
+  ⎿  Added 1 line, removed 1 line
+      189      Box(modifier = modifier.fillMaxWidth().padding(vertical = 
+           28.dp), contentAlignment = Alignment.Center) {
+      190          Text(
+      191              text,
+      192 -            style = LemanType.meta.copy(fontSize = androidx.co
+          -mpose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitT
+          -ype.Sp)),                                                     
+      192 +            style = LemanType.meta.copy(fontSize = 11.sp),    
+      193              color = LemanColors.textFaint,
+      194          )
+      195      }
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Chrome.kt)
+  ⎿  Added 1 line
+      26  import androidx.compose.ui.text.AnnotatedString
+      27  import androidx.compose.ui.tooling.preview.Preview
+      28  import androidx.compose.ui.unit.dp
+      29 +import androidx.compose.ui.unit.sp                             
+      30  import net.liquidx.leman.domain.model.ConnState
+      31  import net.liquidx.leman.ui.components.icons.TablerIcons
+      32  import net.liquidx.leman.ui.theme.HairlineSide
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/Chrome.kt)
+  ⎿  Removed 2 lines
+      231      }
+      232  }
+      233  
+      234 -private fun RowScope.weight1(m: Modifier) = m.weight(1f)      
+      235 -                                                              
+      234  @Preview(showBackground = true, backgroundColor = 0xFF08080A, 
+           widthDp = 380)
+      235  @Composable
+      236  private fun ChromePreview() {
+
+⏺ Now inputs and controls — PromptField, LemanToggle, GlyphTile:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/Inputs.kt)
+  ⎿  Wrote 209 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/Inputs.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.animation.core.LinearEasing
+       4 import androidx.compose.animation.core.RepeatMode
+       5 import androidx.compose.animation.core.animateDpAsState
+       7 import androidx.compose.animation.core.keyframes
+       8 import androidx.compose.animation.core.rememberInfiniteTransitio
+         n
+       9 import androidx.compose.animation.core.animateFloat
+      10 import androidx.compose.animation.core.tween
+     … +231 lines (ctrl+o to expand)
+
+⏺ Now the thread list and thread view components:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/ThreadList.kt)
+  ⎿  Wrote 220 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/ThreadList.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.animation.core.RepeatMode
+       4 import androidx.compose.animation.core.animateFloat
+       5 import androidx.compose.animation.core.infiniteRepeatable
+         n
+       7 import androidx.compose.animation.core.tween
+       8 import androidx.compose.foundation.background
+       9 import androidx.compose.foundation.clickable
+      10 import androidx.compose.foundation.layout.Box
+     … +225 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/components/ThreadView.kt)
+  ⎿  Wrote 419 lines to
+     app/src/main/java/net/liquidx/leman/ui/components/ThreadView.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.animation.AnimatedVisibility
+       4 import androidx.compose.animation.core.RepeatMode
+       5 import androidx.compose.animation.core.animateFloat
+       7 import androidx.compose.animation.core.rememberInfiniteTransitio
+         n
+       8 import androidx.compose.animation.core.tween
+       9 import androidx.compose.foundation.background
+      10 import androidx.compose.foundation.clickable
+     … +470 lines (ctrl+o to expand)
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/format/TimeFormat.kt)
+  ⎿  Wrote 42 lines to
+     app/src/main/java/net/liquidx/leman/ui/format/TimeFormat.kt
+      1 package net.liquidx.leman.ui.format
+      2 
+      3 import java.time.Instant
+      4 import java.time.LocalDate
+      5 import java.time.ZoneId
+      6 import java.time.format.DateTimeFormatter
+      7 import java.util.Locale
+      8 
+      9 enum class DayBucket { Today, Yesterday, Earlier }
+     … +41 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Wrote 159 lines to
+     app/src/main/java/net/liquidx/leman/ui/threads/ThreadsViewModel.kt
+       1 package net.liquidx.leman.ui.threads
+       2 
+       3 import androidx.lifecycle.ViewModel
+       4 import androidx.lifecycle.viewModelScope
+       5 import java.time.ZoneId
+       6 import kotlinx.coroutines.delay
+       7 import kotlinx.coroutines.flow.SharingStarted
+       8 import kotlinx.coroutines.flow.MutableStateFlow
+       9 import kotlinx.coroutines.flow.StateFlow
+      10 import kotlinx.coroutines.flow.combine
+     … +164 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/thread/ThreadViewModel.kt)
+  ⎿  Wrote 141 lines to
+     app/src/main/java/net/liquidx/leman/ui/thread/ThreadViewModel.kt
+       1 package net.liquidx.leman.ui.thread
+       2 
+       3 import androidx.lifecycle.SavedStateHandle
+       4 import androidx.lifecycle.ViewModel
+       5 import androidx.lifecycle.viewModelScope
+       6 import java.time.ZoneId
+       7 import kotlinx.coroutines.flow.MutableStateFlow
+       8 import kotlinx.coroutines.flow.SharingStarted
+       9 import kotlinx.coroutines.flow.StateFlow
+      10 import kotlinx.coroutines.flow.combine
+     … +149 lines (ctrl+o to expand)
+
+⏺ Fixing a staleness bug in the ThreadViewModel combine — trace overrides must
+  be a real combine input, not read as .value:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/thread/ThreadViewModel.kt)
+  ⎿  Added 15 lines, removed 4 lines
+       86          repo.streaming.map { it[threadId] },
+       87          settingsStore.settings,
+       88          connectionManager.state,
+       89 -    ) { thread, turns, streaming, settings, conn ->           
+       90 -        val overrides = traceOverrides.value                  
+       89 +        traceOverrides,                                       
+       90 +    ) { values ->                                             
+       91 +        @Suppress("UNCHECKED_CAST")                           
+       92 +        val thread = values[0] as Thread?                     
+       93 +                                                              
+       94 +        @Suppress("UNCHECKED_CAST")                           
+       95 +        val turns = values[1] as List<Turn>                   
+       96 +        val streaming = values[2] as StreamingRun?            
+       97 +        val settings = values[3] as Settings                  
+       98 +        val conn = values[4] as ConnState                     
+       99 +                                                              
+      100 +        @Suppress("UNCHECKED_CAST")                           
+      101 +        val overrides = values[5] as Map<String, Boolean>     
+      102 +                                                              
+      103          val expanded = turns.asSequence()
+      104              .filter { it.trace != null }
+      105              .map { it.id }
+     ...
+      115              connState = conn,
+      116              loaded = true,
+      117          )
+      106 -    }.combine(traceOverrides) { s, _ -> s } // re-emit on over
+          -ride change                                                   
+      107 -        .stateIn(viewModelScope, SharingStarted.WhileSubscribe
+          -d(5_000), ThreadUiState())                                    
+      118 +    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5
+          +_000), ThreadUiState())                                       
+      119  
+      120      fun onEvent(event: ThreadEvent) {
+      121          when (event) {
+
+⏺ Now the NewThread and Config ViewModels:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadViewModel.kt)
+  ⎿  Wrote 65 lines to
+     app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadViewModel.kt
+       1 package net.liquidx.leman.ui.newthread
+       2 
+       3 import androidx.lifecycle.ViewModel
+       4 import androidx.lifecycle.viewModelScope
+       5 import kotlinx.coroutines.flow.MutableSharedFlow
+       6 import kotlinx.coroutines.flow.MutableStateFlow
+       7 import kotlinx.coroutines.flow.SharedFlow
+       8 import kotlinx.coroutines.flow.SharingStarted
+       9 import kotlinx.coroutines.flow.StateFlow
+      10 import kotlinx.coroutines.flow.asSharedFlow
+     … +58 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt)
+  ⎿  Wrote 211 lines to
+     app/src/main/java/net/liquidx/leman/ui/config/ConfigViewModel.kt
+       1 package net.liquidx.leman.ui.config
+       2 
+       3 import androidx.lifecycle.ViewModel
+       4 import androidx.lifecycle.viewModelScope
+       5 import kotlinx.coroutines.Job
+       6 import kotlinx.coroutines.delay
+       7 import kotlinx.coroutines.flow.MutableStateFlow
+       8 import kotlinx.coroutines.flow.SharingStarted
+       9 import kotlinx.coroutines.flow.StateFlow
+      10 import kotlinx.coroutines.flow.combine
+     … +227 lines (ctrl+o to expand)
+
+⏺ Adding a ticker injection point to ThreadsViewModel (the infinite minute-loop
+  would hang virtual-time tests), then writing the VM tests:
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 6 lines, removed 6 lines
+      60      connectionManager: ConnectionManager,
+      61      private val clock: () -> Long = System::currentTimeMillis,
+      62      private val zone: ZoneId = ZoneId.systemDefault(),
+      63 -) : ViewModel() {                                              
+      64 -                                                               
+      65 -    private val filter = MutableStateFlow("")                  
+      66 -                                                               
+      63      // A minute ticker so TODAY/YESTERDAY re-bucket at local mi
+          dnight (spec 04).
+      68 -    private val tick = flow {                                  
+      64 +    // Injectable: the infinite loop must not run under virtual
+         +-time tests.                                                   
+      65 +    private val tick: kotlinx.coroutines.flow.Flow<Unit> = flow
+         + {                                                             
+      66          while (true) {
+      67              emit(Unit)
+      68              delay(60_000)
+      69          }
+      73 -    }                                                          
+      70 +    },                                                         
+      71 +) : ViewModel() {                                              
+      72  
+      73 +    private val filter = MutableStateFlow("")                  
+      74 +                                                               
+      75      val state: StateFlow<ThreadsUiState> = combine(
+      76          repo.observeThreads(),
+      77          filter,
+
+⏺ Write(app/src/test/java/net/liquidx/leman/testutil/VmTestHarness.kt)  ⎿  Wrote 84 lines to
+     app/src/test/java/net/liquidx/leman/testutil/VmTestHarness.kt
+       1 package net.liquidx.leman.testutil
+       2 
+       3 import androidx.room.Room
+       4 import androidx.test.core.app.ApplicationProvider
+       5 import java.io.File
+       6 import kotlin.random.Random
+       7 import kotlinx.coroutines.CoroutineScope
+       8 import kotlinx.coroutines.Dispatchers
+       9 import kotlinx.coroutines.flow.Flow
+      10 import kotlinx.coroutines.test.StandardTestDispatcher
+     … +78 lines (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/testutil/VmTestHarness.kt)
+  ⎿  Added 2 lines, removed 1 line
+      79  
+      80      companion object {
+      81          /** 2026-07-15T12:00:00Z — tests pin the zone to UTC. *
+          /
+      82 -        const val FIXED_NOW = 1_784_116_800_000L               
+      82 +        val FIXED_NOW: Long = java.time.LocalDateTime.of(2026, 
+         +7, 15, 12, 0)                                                  
+      83 +            .toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+      84      }
+      85  }
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/threads/ThreadsViewModelTest.kt)
+  ⎿  Wrote 158 lines to
+     app/src/test/java/net/liquidx/leman/ui/threads/ThreadsViewModelTest.kt
+       1 package net.liquidx.leman.ui.threads
+       2 
+       3 import app.cash.turbine.test
+       4 import java.time.ZoneOffset
+       5 import kotlinx.coroutines.flow.flowOf
+       6 import kotlinx.coroutines.test.advanceUntilIdle
+       7 import kotlinx.coroutines.test.runTest
+       8 import net.liquidx.leman.data.local.ThreadEntity
+       9 import net.liquidx.leman.testutil.MainDispatcherRule
+      10 import net.liquidx.leman.testutil.VmHarness
+     … +178 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/thread/ThreadViewModelTest.kt)
+  ⎿  Wrote 174 lines to
+     app/src/test/java/net/liquidx/leman/ui/thread/ThreadViewModelTest.kt
+       1 package net.liquidx.leman.ui.thread
+       2 
+       3 import androidx.lifecycle.SavedStateHandle
+       4 import app.cash.turbine.test
+       5 import java.time.ZoneOffset
+       6 import kotlinx.coroutines.test.advanceUntilIdle
+       7 import kotlinx.coroutines.test.runTest
+       8 import net.liquidx.leman.domain.model.ConnState
+       9 import net.liquidx.leman.domain.model.RunEvent
+      10 import net.liquidx.leman.domain.model.TurnKind
+     … +188 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/config/ConfigViewModelTest.kt)
+  ⎿  Wrote 178 lines to
+     app/src/test/java/net/liquidx/leman/ui/config/ConfigViewModelTest.kt
+       1 package net.liquidx.leman.ui.config
+       2 
+       3 import app.cash.turbine.test
+       4 import kotlinx.coroutines.test.advanceTimeBy
+       5 import kotlinx.coroutines.test.advanceUntilIdle
+       6 import kotlinx.coroutines.test.runTest
+       7 import net.liquidx.leman.domain.model.ApiError
+       8 import net.liquidx.leman.domain.model.ApiResult
+       9 import net.liquidx.leman.domain.model.RunEvent
+      10 import net.liquidx.leman.testutil.MainDispatcherRule
+     … +189 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/ui/newthread/NewThreadViewModelTest.
+       kt)
+  ⎿  Wrote 73 lines to app/src/test/java/net/liquidx/leman/ui/newthread/New
+     ThreadViewModelTest.kt
+       1 package net.liquidx.leman.ui.newthread
+       2 
+       3 import app.cash.turbine.test
+       4 import kotlinx.coroutines.test.advanceUntilIdle
+       5 import kotlinx.coroutines.test.runTest
+       6 import net.liquidx.leman.domain.model.RunEvent
+       7 import net.liquidx.leman.testutil.MainDispatcherRule
+       8 import net.liquidx.leman.testutil.VmHarness
+       9 import net.liquidx.leman.ui.threads.awaitUntil
+      10 import org.junit.Assert.assertEquals
+     … +68 lines (ctrl+o to expand)
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ All 22 ViewModel tests green. Now the screens, navigation, DI container, and
+  app entry:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/di/AppContainer.kt)
+  ⎿  Wrote 89 lines to
+     app/src/main/java/net/liquidx/leman/di/AppContainer.kt
+       1 package net.liquidx.leman.di
+       2 
+       3 import android.content.Context
+       4 import androidx.navigation.NavController
+       5 import androidx.navigation.NavGraphBuilder
+       6 import kotlinx.coroutines.CoroutineScope
+       7 import kotlinx.coroutines.Dispatchers
+       8 import kotlinx.coroutines.SupervisorJob
+       9 import net.liquidx.leman.BuildConfig
+      10 import net.liquidx.leman.data.local.LemanDatabase
+     … +88 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/LemanApp.kt)
+  ⎿  Wrote 16 lines to app/src/main/java/net/liquidx/leman/LemanApp.kt
+      1 package net.liquidx.leman
+      2 
+      3 import android.app.Application
+      4 import net.liquidx.leman.di.AppContainer
+      5 
+      6 class LemanApp : Application() {
+      7 
+      8     lateinit var container: AppContainer
+      9         private set
+     … +6 lines (ctrl+o to expand)
+
+⏺ Now the four screens:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsScreen.kt)
+  ⎿  Wrote 171 lines to
+     app/src/main/java/net/liquidx/leman/ui/threads/ThreadsScreen.kt
+       1 package net.liquidx.leman.ui.threads
+       2 
+       3 import androidx.compose.foundation.clickable
+       4 import androidx.compose.foundation.layout.Box
+       5 import androidx.compose.foundation.layout.Column
+       6 import androidx.compose.foundation.layout.fillMaxWidth
+       7 import androidx.compose.foundation.layout.matchParentSize
+       8 import androidx.compose.foundation.layout.padding
+       9 import androidx.compose.foundation.lazy.LazyColumn
+      10 import androidx.compose.material3.Text
+     … +171 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/thread/ThreadScreen.kt)
+  ⎿  Wrote 186 lines to
+     app/src/main/java/net/liquidx/leman/ui/thread/ThreadScreen.kt
+       1 package net.liquidx.leman.ui.thread
+       2 
+       3 import androidx.compose.foundation.layout.Box
+       4 import androidx.compose.foundation.layout.Column
+       5 import androidx.compose.foundation.layout.WindowInsets
+       6 import androidx.compose.foundation.layout.fillMaxSize
+       7 import androidx.compose.foundation.layout.fillMaxWidth
+       8 import androidx.compose.foundation.layout.imePadding
+       9 import androidx.compose.foundation.layout.padding
+      10 import androidx.compose.foundation.layout.safeDrawing
+     … +194 lines (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadScreen.kt)
+  ⎿  Wrote 96 lines to
+     app/src/main/java/net/liquidx/leman/ui/newthread/NewThreadScreen.kt
+       1 package net.liquidx.leman.ui.newthread
+       2 
+       3 import androidx.compose.foundation.background
+       4 import androidx.compose.foundation.clickable
+       5 import androidx.compose.foundation.layout.Box
+       6 import androidx.compose.foundation.layout.Column
+       7 import androidx.compose.foundation.layout.Row
+       8 import androidx.compose.foundation.layout.defaultMinSize
+       9 import androidx.compose.foundation.layout.fillMaxWidth
+      10 import androidx.compose.foundation.layout.padding
+     … +97 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/components/LemanButton.kt)
+  ⎿  Added 1 line
+      42          color = text.copy(alpha = text.alpha * alpha),
+      43          maxLines = 1,
+      44          softWrap = false,
+      45 +        textAlign = androidx.compose.ui.text.style.TextAlign.Ce
+         +nter,                                                          
+      46          modifier = modifier
+      47              .background(fill)
+      48              .hairlineBorder(border.copy(alpha = border.alpha * 
+          alpha))
+
+⏺ Now the Config screen:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Wrote 243 lines to
+     app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt
+       1 package net.liquidx.leman.ui.config
+       2 
+       3 import androidx.compose.foundation.clickable
+       4 import androidx.compose.foundation.layout.Arrangement
+       5 import androidx.compose.foundation.layout.Box
+       6 import androidx.compose.foundation.layout.Column
+       7 import androidx.compose.foundation.layout.Row
+       8 import androidx.compose.foundation.layout.Spacer
+       9 import androidx.compose.foundation.layout.fillMaxWidth
+      10 import androidx.compose.foundation.layout.height
+     … +272 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 1 line, removed 1 line
+      113              ) {
+      114                  Text(
+      115                      state.revealedKey ?: state.apiKeyMasked ?:
+            "no key set",
+      116 -                    style = LemanType.meta.copy(fontSize = 11.
+          -sp, letterSpacing = 0.14.let { androidx.compose.ui.unit.TextUn
+          -it(it.toFloat(), androidx.compose.ui.unit.TextUnitType.Em) }),
+      116 +                    style = LemanType.meta.copy(fontSize = 11.
+          +sp, letterSpacing = 0.14.em),                                 
+      117                      color = LemanColors.textTertiary,
+      118                      modifier = Modifier.weight(1f),
+      119                  )
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/config/ConfigScreen.kt)
+  ⎿  Added 1 line
+      17  import androidx.compose.ui.Modifier
+      18  import androidx.compose.ui.text.AnnotatedString
+      19  import androidx.compose.ui.unit.dp
+      20 +import androidx.compose.ui.unit.em                             
+      21  import androidx.compose.ui.unit.sp
+      22  import net.liquidx.leman.domain.model.ConnState
+      23  import net.liquidx.leman.domain.model.Settings
+
+⏺ Now the NavHost, MainActivity, and manifest:
+
+⏺ Write(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Wrote 214 lines to
+     app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt
+       1 package net.liquidx.leman.ui.nav
+       2 
+       3 import android.content.Intent
+       4 import androidx.compose.animation.fadeIn
+       5 import androidx.compose.animation.fadeOut
+       6 import androidx.compose.animation.core.tween
+       7 import androidx.compose.runtime.Composable
+       8 import androidx.compose.runtime.LaunchedEffect
+       9 import androidx.compose.runtime.collectAsState
+      10 import androidx.compose.runtime.getValue
+     … +230 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Removed 8 lines
+      204          container.debugHooks?.registerDestinations(this, navCo
+           ntroller)
+      205      }
+      206  }
+      207 -                                                              
+      208 -private fun androidx.compose.runtime.Composable.unused() {}   
+      209 -                                                              
+      210 -private val kotlinx.coroutines.CoroutineScope.launch get() = :
+          -:launchIn                                                     
+      211 -                                                              
+      212 -private fun kotlinx.coroutines.CoroutineScope.launchIn(block: 
+          -suspend () -> Unit) {                                         
+      213 -    kotlinx.coroutines.launch { block() }                     
+      214 -}                                                             
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 1 line
+      25  import androidx.navigation.navDeepLink
+      26  import java.time.ZoneId
+      27  import kotlinx.coroutines.delay
+      28 +import kotlinx.coroutines.launch                               
+      29  import net.liquidx.leman.BuildConfig
+      30  import net.liquidx.leman.di.AppContainer
+      31  import net.liquidx.leman.ui.components.ConfigTab
+⏺ Write(app/src/main/java/net/liquidx/leman/MainActivity.kt)
+  ⎿  Added 67 lines, removed 9 lines
+       1  package net.liquidx.leman
+       2  
+       3 +import android.content.Intent                                  
+       4  import android.os.Bundle
+       4 -import androidx.activity.ComponentActivity                     
+       5  import androidx.activity.compose.setContent
+       6  import androidx.activity.enableEdgeToEdge
+       7 -import androidx.compose.foundation.background                  
+       8 -import androidx.compose.foundation.layout.Box                  
+       9 -import androidx.compose.foundation.layout.fillMaxSize          
+      10 -import androidx.compose.ui.Modifier                            
+      11 -import androidx.compose.ui.graphics.Color                      
+       7 +import androidx.biometric.BiometricManager                     
+       8 +import androidx.biometric.BiometricPrompt                      
+       9 +import androidx.core.content.ContextCompat                     
+      10 +import androidx.fragment.app.FragmentActivity                  
+      11 +import androidx.lifecycle.Lifecycle                            
+      12 +import androidx.lifecycle.LifecycleEventObserver               
+      13 +import net.liquidx.leman.ui.nav.LemanNavHost                   
+      14 +import net.liquidx.leman.ui.theme.LemanTheme                   
+      15  
+      13 -class MainActivity : ComponentActivity() {                     
+      16 +// FragmentActivity (a ComponentActivity) so BiometricPrompt ca
+         +n attach.                                                      
+      17 +class MainActivity : FragmentActivity() {                      
+      18 +                                                               
+      19      override fun onCreate(savedInstanceState: Bundle?) {
+      20          super.onCreate(savedInstanceState)
+      21          enableEdgeToEdge()
+      22 +        val container = (application as LemanApp).container    
+      23 +                                                               
+      24 +        // Health probe on STARTED so the status row settles fa
+         +st (spec 04).                                                  
+      25 +        lifecycle.addObserver(                                 
+      26 +            LifecycleEventObserver { _, event ->               
+      27 +                if (event == Lifecycle.Event.ON_START) containe
+         +r.connectionManager.reconfigure()                              
+      28 +            },                                                 
+      29 +        )                                                      
+      30 +                                                               
+      31          setContent {
+      18 -            // Placeholder until ui/nav lands (Task 15).       
+      19 -            Box(Modifier.fillMaxSize().background(Color(0xFF080
+         -80A)))                                                         
+      32 +            LemanTheme {                                       
+      33 +                LemanNavHost(                                  
+      34 +                    container = container,                     
+      35 +                    onRevealKey = ::authenticateThen,          
+      36 +                    onShareExport = ::shareExport,             
+      37 +                )                                              
+      38 +            }                                                  
+      39          }
+      40      }
+      41 +                                                               
+      42 +    /** `reveal` re-triggers BiometricPrompt when biometric unl
+         +ock is on (spec 03). */                                        
+      43 +    private fun authenticateThen(onAuthed: () -> Unit) {       
+      44 +        val canAuth = BiometricManager.from(this).canAuthentica
+         +te(                                                            
+      45 +            BiometricManager.Authenticators.BIOMETRIC_WEAK or  
+      46 +                BiometricManager.Authenticators.DEVICE_CREDENTI
+         +AL,                                                            
+      47 +        )                                                      
+      48 +        if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {   
+      49 +            onAuthed() // no biometrics enrolled — don't lock t
+         +he user out of their own key                                   
+      50 +            return                                             
+      51 +        }                                                      
+      52 +        val prompt = BiometricPrompt(                          
+      53 +            this,                                              
+      54 +            ContextCompat.getMainExecutor(this),               
+      55 +            object : BiometricPrompt.AuthenticationCallback() {
+      56 +                override fun onAuthenticationSucceeded(result: 
+         +BiometricPrompt.AuthenticationResult) {                        
+      57 +                    onAuthed()                                 
+      58 +                }                                              
+      59 +            },                                                 
+      60 +        )                                                      
+      61 +        prompt.authenticate(                                   
+      62 +            BiometricPrompt.PromptInfo.Builder()               
+      63 +                .setTitle("reveal api key")                    
+      64 +                .setAllowedAuthenticators(                     
+      65 +                    BiometricManager.Authenticators.BIOMETRIC_W
+         +EAK or                                                         
+      66 +                        BiometricManager.Authenticators.DEVICE_
+         +CREDENTIAL,                                                    
+      67 +                )                                              
+      68 +                .build(),                                      
+      69 +        )                                                      
+      70 +    }                                                          
+      71 +                                                               
+      72 +    private fun shareExport(json: String) {                    
+      73 +        val send = Intent(Intent.ACTION_SEND).apply {          
+      74 +            type = "application/json"                          
+      75 +            putExtra(Intent.EXTRA_TITLE, "leman-threads.json") 
+      76 +            putExtra(Intent.EXTRA_TEXT, json)                  
+      77 +        }                                                      
+      78 +        startActivity(Intent.createChooser(send, "export thread
+         +s"))                                                           
+      79 +    }                                                          
+      80  }
+
+⏺ Write(app/src/main/AndroidManifest.xml)
+  ⎿  Error writing file
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Write(app/src/main/AndroidManifest.xml)
+  ⎿  Added 16 lines, removed 3 lines
+       1  <?xml version="1.0" encoding="utf-8"?>
+       2 -<manifest xmlns:android="http://schemas.android.com/apk/res/and
+         -roid"                                                          
+       3 -    xmlns:tools="http://schemas.android.com/tools">            
+       2 +<manifest xmlns:android="http://schemas.android.com/apk/res/and
+         +roid">                                                         
+       3  
+       4 +    <uses-permission android:name="android.permission.INTERNET"
+         + />                                                            
+       5 +    <uses-permission android:name="android.permission.USE_BIOME
+         +TRIC" />                                                       
+       6 +                                                               
+       7      <application
+       8 +        android:name=".LemanApp"                               
+       9          android:allowBackup="true"
+      10          android:dataExtractionRules="@xml/data_extraction_rules
+          "
+      11          android:fullBackupContent="@xml/backup_rules"
+     ...
+      18              android:name=".MainActivity"
+      19              android:exported="true"
+      20              android:label="@string/app_name"
+      21 +            android:launchMode="singleTask"                    
+      22              android:theme="@style/Theme.LeMan"
+      23              android:windowSoftInputMode="adjustResize">
+      24              <intent-filter>
+     ...
+      26  
+      27                  <category android:name="android.intent.category
+          .LAUNCHER" />
+      28              </intent-filter>
+      29 +            <!-- leman://thread/{id} — notifications and the de
+         +bug panel (spec 01) -->                                        
+      30 +            <intent-filter>                                    
+      31 +                <action android:name="android.intent.action.VIE
+         +W" />                                                          
+      32 +                                                               
+      33 +                <category android:name="android.intent.category
+         +.DEFAULT" />                                                   
+      34 +                <category android:name="android.intent.category
+         +.BROWSABLE" />                                                 
+      35 +                                                               
+      36 +                <data android:scheme="leman" android:host="thre
+         +ad" />                                                         
+      37 +            </intent-filter>                                   
+      38          </activity>
+      39      </application>
+      40  
+      28 -</manifest>                                                    
+      41   No newline at end of file
+      42 +</manifest>                                                    
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/nav/LemanNavHost.kt)
+  ⎿  Added 1 line, removed 1 line
+      13  import androidx.compose.runtime.remember
+      14  import androidx.compose.ui.platform.LocalContext
+      15  import androidx.core.net.toUri
+      16 -import androidx.lifecycle.SavedStateHandle                     
+      16  import androidx.lifecycle.compose.collectAsStateWithLifecycle
+      17 +import androidx.lifecycle.createSavedStateHandle               
+      18  import androidx.lifecycle.viewmodel.compose.viewModel
+      19  import androidx.lifecycle.viewmodel.initializer
+      20  import androidx.lifecycle.viewmodel.viewModelFactory
+
+⏺ Update(app/src/main/java/net/liquidx/leman/ui/threads/ThreadsScreen.kt)
+  ⎿  Removed 1 line
+       4  import androidx.compose.foundation.layout.Box
+       5  import androidx.compose.foundation.layout.Column
+       6  import androidx.compose.foundation.layout.fillMaxWidth
+       7 -import androidx.compose.foundation.layout.matchParentSize      
+       7  import androidx.compose.foundation.layout.padding
+       8  import androidx.compose.foundation.lazy.LazyColumn
+       9  import androidx.compose.material3.Text
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ Task 16–17 — sample corpus + debug tooling. First the corpus and the logger,
+  plus the wrapClient seam in AppContainer:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/main/java/net/liquidx/leman/util/LemanLog.kt)
+  ⎿  Wrote 30 lines to app/src/main/java/net/liquidx/leman/util/LemanLog.kt
+       1 package net.liquidx.leman.util
+       2 
+       4 import net.liquidx.leman.BuildConfig
+       5 
+       6 /**
+          builds tee
+       8  * into the DebugLogBus via [sink] so the debug panel renders th
+         e same stream
+         g.
+      10  */
+     … +24 lines (ctrl+o to expand)
+
+⏺ Update(app/src/main/java/net/liquidx/leman/di/AppContainer.kt)
+  ⎿  Added 3 lines
+      25      val extraTabs: List<LemanTab> get() = emptyList()
+      26      fun interceptors(): List<okhttp3.Interceptor> = emptyList()
+      27      fun attach(container: AppContainer) {}
+      28 +                                                               
+      29 +    /** Lets debug builds swap in the in-process fake gateway a
+         +t runtime (spec 08). */                                        
+      30 +    fun wrapClient(real: HermesClient): HermesClient = real    
+      31      fun registerDestinations(builder: NavGraphBuilder, navContr
+          oller: NavController) {}
+      32  }
+      33  
+
+⏺ Update(app/src/main/java/net/liquidx/leman/di/AppContainer.kt)
+  ⎿  Added 7 lines, removed 4 lines
+      60      val db: LemanDatabase by lazy { overrides.db ?: LemanDataba
+          se.build(appContext) }
+      61  
+      62      val hermesClient: HermesClient by lazy {
+      63 -        overrides.hermesClient ?: OkHttpHermesClient(          
+      64 -            userAgent = "leman-android/${BuildConfig.VERSION_NA
+         -ME}",                                                          
+      65 -            interceptors = debugHooks?.interceptors().orEmpty()
+         -,                                                              
+      66 -        )                                                      
+      63 +        overrides.hermesClient ?: run {                        
+      64 +            val real = OkHttpHermesClient(                     
+      65 +                userAgent = "leman-android/${BuildConfig.VERSIO
+         +N_NAME}",                                                      
+      66 +                interceptors = debugHooks?.interceptors().orEmp
+         +ty(),                                                          
+      67 +            )                                                  
+      68 +            debugHooks?.wrapClient(real) ?: real               
+      69 +        }                                                      
+      70      }
+      71  
+      72      val connectionManager: ConnectionManager by lazy {
+
+⏺ Now the sample corpus (debug source set — visible to debug unit tests,
+  stripped from release):
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/SampleCorpus.kt)
+  ⎿  Wrote 189 lines to
+     app/src/debug/java/net/liquidx/leman/debug/SampleCorpus.kt
+      1 package net.liquidx.leman.debug
+      2 
+      3 import net.liquidx.leman.data.local.LemanDatabase
+      4 import net.liquidx.leman.data.local.ThreadEntity
+      5 import net.liquidx.leman.data.local.TurnEntity
+      6 import net.liquidx.leman.data.local.encodeTrace
+      7 import net.liquidx.leman.domain.model.Trace
+      8 import net.liquidx.leman.domain.model.TraceStep
+      9 import net.liquidx.leman.domain.model.TraceStepKind
+     … +239 lines (ctrl+o to expand)
+
+⏺ Now the fake gateway, log bus, chaos interceptor, and switchable client:
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/DebugLogBus.kt)
+  ⎿  Wrote 54 lines to
+     app/src/debug/java/net/liquidx/leman/debug/DebugLogBus.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import kotlinx.coroutines.flow.MutableStateFlow
+       4 import kotlinx.coroutines.flow.StateFlow
+       5 import kotlinx.coroutines.flow.asStateFlow
+       6 import kotlinx.coroutines.flow.update
+       7 
+       8 data class NetLogEntry(
+       9     val id: Long,
+      10     val method: String,
+     … +50 lines (ctrl+o to expand)
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/Chaos.kt)
+  ⎿  Wrote 35 lines to app/src/debug/java/net/liquidx/leman/debug/Chaos.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import kotlinx.coroutines.flow.MutableStateFlow
+       4 
+       5 /** Fault-injection flags (spec 08 CHAOS). */
+       7     val extraLatencyMs: Long = 0,          // 0 / 500 / 2000
+       8     val failNextRestCalls: Int = 0,        // synthetic 500s
+       9     val corruptNextPayload: Boolean = false,
+      10     val dropStream: Boolean = false,       // kill the run event
+          stream mid-flight
+     … +29 lines (ctrl+o to expand)
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/DebugInterceptor.kt)
+  ⎿  Wrote 87 lines to
+     app/src/debug/java/net/liquidx/leman/debug/DebugInterceptor.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import okhttp3.Interceptor
+       4 import okhttp3.Protocol
+       5 import okhttp3.Response
+       7 import okio.Buffer
+       8 
+       9 /**
+      10  * Debug-only OkHttp interceptor (spec 08): network log ring buf
+         fer + chaos
+     … +88 lines (ctrl+o to expand)
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/FakeHermesServer.kt)
+  ⎿  Wrote 234 lines to
+     app/src/debug/java/net/liquidx/leman/debug/FakeHermesServer.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import java.io.IOException
+       4 import java.util.concurrent.ConcurrentHashMap
+       5 import java.util.concurrent.atomic.AtomicInteger
+       6 import kotlinx.coroutines.delay
+       7 import kotlinx.coroutines.flow.Flow
+       8 import kotlinx.coroutines.flow.MutableStateFlow
+       9 import kotlinx.coroutines.flow.flow
+      10 import net.liquidx.leman.data.remote.HealthDto
+     … +271 lines (ctrl+o to expand)
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/DebugHooksImpl.kt)
+  ⎿  Wrote 49 lines to
+     app/src/debug/java/net/liquidx/leman/debug/DebugHooksImpl.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import android.os.StrictMode
+       4 import androidx.navigation.NavController
+       5 import androidx.navigation.NavGraphBuilder
+       6 import androidx.navigation.compose.composable
+       7 import net.liquidx.leman.data.remote.HermesClient
+       8 import net.liquidx.leman.di.AppContainer
+       9 import net.liquidx.leman.di.DebugHooks
+      10 import net.liquidx.leman.ui.components.LemanTab
+     … +47 lines (ctrl+o to expand)
+
+⏺ Write(app/src/debug/java/net/liquidx/leman/debug/DebugScreen.kt)
+  ⎿  Wrote 262 lines to
+     app/src/debug/java/net/liquidx/leman/debug/DebugScreen.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import androidx.compose.foundation.clickable
+       4 import androidx.compose.foundation.layout.Arrangement
+       5 import androidx.compose.foundation.layout.Box
+       6 import androidx.compose.foundation.layout.Column
+       7 import androidx.compose.foundation.layout.Row
+       8 import androidx.compose.foundation.layout.fillMaxWidth
+       9 import androidx.compose.foundation.layout.height
+      10 import androidx.compose.foundation.layout.padding
+     … +315 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/debug/FakeHermesServerTest.kt)
+  ⎿  Wrote 61 lines to
+     app/src/test/java/net/liquidx/leman/debug/FakeHermesServerTest.kt
+       1 package net.liquidx.leman.debug
+       2 
+       3 import kotlinx.coroutines.flow.toList
+       4 import kotlinx.coroutines.test.runTest
+       5 import net.liquidx.leman.data.remote.RunStatus
+       6 import net.liquidx.leman.data.remote.WireMessage
+       7 import net.liquidx.leman.domain.model.ApiResult
+       8 import net.liquidx.leman.domain.model.RunEvent
+       9 import net.liquidx.leman.domain.model.getOrNull
+      10 import org.junit.Assert.assertEquals
+     … +60 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+⏺ Update(app/src/debug/java/net/liquidx/leman/debug/DebugHooksImpl.kt)
+  ⎿  Added 1 line, removed 1 line
+      43  
+      44      override fun registerDestinations(builder: NavGraphBuilder,
+           navController: NavController) {
+      45          builder.composable("debug") {
+      46 -            DebugScreen(hooks = this, navController = navContro
+         -ller)                                                          
+      46 +            DebugScreen(hooks = this@DebugHooksImpl, navControl
+         +ler = navController)                                           
+      47          }
+      48      }
+      49  }
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Both variants build (release proves the debug code stays out), tests pass.
+  Committing:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Task 18–20 — screenshot suite first:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotFixtures.kt)
+  ⎿  Wrote 104 lines to
+     app/src/test/java/net/liquidx/leman/screenshot/ScreenshotFixtures.kt
+       1 package net.liquidx.leman.screenshot
+       2 
+       3 import net.liquidx.leman.data.local.toDomain
+       4 import net.liquidx.leman.debug.SampleCorpus
+       5 import net.liquidx.leman.domain.model.AgentProfile
+       6 import net.liquidx.leman.domain.model.ConnState
+       7 import net.liquidx.leman.domain.model.SendState
+       8 import net.liquidx.leman.domain.model.Thread
+       9 import net.liquidx.leman.domain.model.Turn
+      10 import net.liquidx.leman.domain.model.TurnKind
+     … +111 lines (ctrl+o to expand)
+
+⏺ Write(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Wrote 200 lines to
+     app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt
+       1 package net.liquidx.leman.screenshot
+       2 
+       3 import androidx.compose.foundation.layout.Box
+       4 import androidx.compose.foundation.layout.size
+       5 import androidx.compose.runtime.Composable
+       6 import androidx.compose.ui.Modifier
+       7 import androidx.compose.ui.test.junit4.createComposeRule
+       8 import androidx.compose.ui.test.onRoot
+       9 import androidx.compose.ui.unit.dp
+      10 import com.github.takahirom.roborazzi.captureRoboImage
+     … +220 lines (ctrl+o to expand)
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 8 lines, removed 8 lines
+      187      @Test
+      188      fun markdown_torture() = snap("md-torture") {
+      189          val blocks = segmentBlocks(Fixtures.load("markdown/tor
+           ture.md"))
+      190 -        androidx.compose.foundation.rememberScrollState().let 
+          -{ scroll ->                                                   
+      191 -            androidx.compose.foundation.layout.Column(        
+      192 -                Modifier                                      
+      193 -                    .size(380.dp, 788.dp)                     
+      194 -                    .androidx.compose.foundation.verticalScrol
+          -l(scroll),                                                    
+      195 -            ) {                                               
+      196 -                net.liquidx.leman.ui.components.AgentTurn("jun
+          -o", blocks)                                                   
+      197 -            }                                                 
+      190 +        androidx.compose.foundation.layout.Column(            
+      191 +            Modifier                                          
+      192 +                .size(380.dp, 788.dp)                         
+      193 +                .androidx.compose.foundation.verticalScroll(  
+      194 +                    androidx.compose.foundation.rememberScroll
+          +State(),                                                      
+      195 +                ),                                            
+      196 +        ) {                                                   
+      197 +            net.liquidx.leman.ui.components.AgentTurn("juno", 
+          +blocks)                                                       
+      198          }
+      199      }
+      200  }
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 3 lines
+       1  package net.liquidx.leman.screenshot
+       2  
+       3  import androidx.compose.foundation.layout.Box
+       4 +import androidx.compose.foundation.layout.Column               
+       5  import androidx.compose.foundation.layout.size
+       6 +import androidx.compose.foundation.rememberScrollState         
+       7 +import androidx.compose.foundation.verticalScroll              
+       8  import androidx.compose.runtime.Composable
+       9  import androidx.compose.ui.Modifier
+      10  import androidx.compose.ui.test.junit4.createComposeRule
+
+⏺ Update(app/src/test/java/net/liquidx/leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 2 lines, removed 4 lines
+      190      @Test
+      191      fun markdown_torture() = snap("md-torture") {
+      192          val blocks = segmentBlocks(Fixtures.load("markdown/tor
+           ture.md"))
+      193 -        androidx.compose.foundation.layout.Column(            
+      193 +        Column(                                               
+      194              Modifier
+      195                  .size(380.dp, 788.dp)
+      196 -                .androidx.compose.foundation.verticalScroll(  
+      197 -                    androidx.compose.foundation.rememberScroll
+          -State(),                                                      
+      198 -                ),                                            
+      196 +                .verticalScroll(rememberScrollState()),       
+      197          ) {
+      198              net.liquidx.leman.ui.components.AgentTurn("juno", 
+           blocks)
+      199          }
+
+  Listed 1 directory, ran 1 shell command (ctrl+o to expand)
+
+⏺ 11 goldens recorded, but the three 2b variants have suspiciously similar file
+  sizes. Inspecting them:
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Expanded trace table matches the spec. Checking 2a and 2d:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 2a matches the mock closely. Checking config:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ All screens render faithfully. Committing the screenshot suite, then the
+  instrumented tests and launcher icon:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ No device connected — instrumented tests will be compile-verified. Writing
+  them:
+
+⏺ Write(app/src/androidTest/java/net/liquidx/leman/DaoInstrumentedTest.kt)
+  ⎿  Wrote 55 lines to
+     app/src/androidTest/java/net/liquidx/leman/DaoInstrumentedTest.kt
+       1 package net.liquidx.leman
+       2 
+       3 import androidx.room.Room
+       4 import androidx.test.core.app.ApplicationProvider
+       5 import androidx.test.ext.junit.runners.AndroidJUnit4
+       6 import kotlinx.coroutines.flow.first
+       7 import kotlinx.coroutines.runBlocking
+       8 import net.liquidx.leman.data.local.LemanDatabase
+       9 import net.liquidx.leman.data.local.ThreadEntity
+      10 import net.liquidx.leman.data.local.TurnEntity
+     … +52 lines (ctrl+o to expand)
+
+⏺ Write(app/src/androidTest/java/net/liquidx/leman/LemanE2eTest.kt)
+  ⎿  Wrote 146 lines to
+     app/src/androidTest/java/net/liquidx/leman/LemanE2eTest.kt
+       1 package net.liquidx.leman
+       2 
+       3 import androidx.activity.ComponentActivity
+       4 import androidx.compose.ui.test.assertCountEquals
+       5 import androidx.compose.ui.test.hasSetTextAction
+       6 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+       7 import androidx.compose.ui.test.onAllNodes
+       8 import androidx.compose.ui.test.onAllNodesWithContentDescription
+       9 import androidx.compose.ui.test.onAllNodesWithText
+      10 import androidx.compose.ui.test.onNodeWithText
+     … +162 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(app/src/androidTest/java/net/liquidx/leman/LemanE2eTest.kt)
+  ⎿  Removed 1 line
+       4  import androidx.compose.ui.test.assertCountEquals
+       5  import androidx.compose.ui.test.hasSetTextAction
+       6  import androidx.compose.ui.test.junit4.createAndroidComposeRule
+       7 -import androidx.compose.ui.test.onAllNodes                     
+       7  import androidx.compose.ui.test.onAllNodesWithContentDescriptio
+          n
+       8  import androidx.compose.ui.test.onAllNodesWithText
+       9  import androidx.compose.ui.test.onNodeWithText
+
+⏺ Update(app/src/androidTest/java/net/liquidx/leman/LemanE2eTest.kt)
+  ⎿  Added 2 lines, removed 4 lines
+      59              ),
+      60          )
+      61          runBlocking { SampleCorpus.seed(db) }
+      62 -        compose.activity.runOnUiThread {                       
+      63 -            (compose.activity as ComponentActivity).setContent 
+         -{                                                              
+      64 -                LemanTheme { LemanNavHost(container) }         
+      65 -            }                                                  
+      62 +        compose.setContent {                                   
+      63 +            LemanTheme { LemanNavHost(container) }             
+      64          }
+      65          container.connectionManager.reconfigure()
+      66      }
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Instrumented tests compile. Now the launcher icon:
+
+⏺ Write(app/src/main/res/drawable/ic_launcher_background.xml)
+  ⎿  Error writing file
+⏺ Write(app/src/main/res/drawable/ic_launcher_foreground.xml)
+  ⎿  Error writing file
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Write(app/src/main/res/drawable/ic_launcher_background.xml)
+  ⎿  Wrote 11 lines to app/src/main/res/drawable/ic_launcher_background.xml
+       1 <?xml version="1.0" encoding="utf-8"?>
+       2 <!-- LeMan base #08080A (spec 06 launcher icon). -->
+       3 <vector xmlns:android="http://schemas.android.com/apk/res/androi
+         d"
+       4     android:width="108dp"
+       6     android:viewportWidth="108"
+       7     android:viewportHeight="108">
+       8     <path
+       9         android:fillColor="#08080A"
+      10         android:pathData="M0,0h108v108h-108z" />
+     … +1 line (ctrl+o to expand)
+
+⏺ Write(app/src/main/res/drawable/ic_launcher_foreground.xml)
+  ⎿  Wrote 24 lines to app/src/main/res/drawable/ic_launcher_foreground.xml
+       1 <?xml version="1.0" encoding="utf-8"?>
+       2 <!-- Accent ✳-style six-spoke asterisk; debug builds tint it war
+         n amber via
+       4 <vector xmlns:android="http://schemas.android.com/apk/res/androi
+         d"
+       5     android:width="108dp"
+       6     android:height="108dp"
+       8     android:viewportHeight="108">
+       9     <group android:pivotX="54" android:pivotY="54">
+      10         <path
+     … +17 lines (ctrl+o to expand)
+
+  Searched for 1 pattern, ran 2 shell commands (ctrl+o to expand)
+
+⏺ Final gate — full unit suite, screenshot verify, lint:
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ Skill(superpowers:finishing-a-development-branch)
+  ⎿  Successfully loaded skill
+
+⏺ I'm using the finishing-a-development-branch skill to complete this work.
+  Tests verified: 131 unit tests green, screenshot verify green, lint clean,
+  debug + release + androidTest all compile. Normal repo, branch implement-app
+  off main, 12 commits.
+
+  Summary
+
+  The full LeMan app is implemented per docs/spec/01–08 on branch implement-app:
+
+  - Wire layer — verified Hermes contract: DTOs, data:-only SSE reader, OkHttp
+    client with the spec-04 error-mapping table, tested against MockWebServer
+    fixtures.
+  - Local store — Room as system of record (threads/turns, trace as one JSON
+    column, FK cascade), DataStore settings, Keystore-encrypted API key excluded
+    from backup/transfer.
+  - Run lifecycle — ThreadRepository implements the whole spec-03 flow:
+    optimistic user turn → client-built history input → event-stream fold →
+    reset-on-replay reconnect with poll backstop → trace+agent persistence,
+    retry/discard, recoverIfRunning, unread bookkeeping. ConnectionManager with
+    jittered backoff that stops dead on auth failure.
+  - Design system — exact handoff tokens, bundled Spline Sans Mono, px-true
+    hairlines, blur glow, flat pressed overlay (no ripple), full component
+    catalog, custom CommonMark→Compose renderer with diff coloring, task lists,
+    option tables, collapsibles, and streaming-safe partial parses.
+  - Screens 2a–2d — with filtering/day-grouping, live trace/streaming turns,
+    biometric-gated key reveal, two-tap clear confirm, leman://thread/{id} deep
+    link.
+  - Debug tooling — fake gateway (4 scenarios), runtime real↔mock switch,
+    network log, event console, chaos flags, markdown playground, warn-tinted
+    debug icon.
+  - Tests — 131 JVM tests, 11 recorded screenshot goldens (the renders match the
+    mocks closely), and an instrumented e2e suite ready for an emulator (none
+    was connected, so it's compile-verified only).
+
+  Two pragmatic deviations, both noted in commits: the Roborazzi Gradle plugin
+  doesn't support AGP 9 yet, so record/verify run via
+  -Proborazzi.test.record/verify=true flags; and Robolectric is pinned to SDK 35
+  (no 36 support released).
+
+  Implementation complete. What would you like to do?
+
+  1. Merge back to main locally
+  2. Push and create a Pull Request
+  3. Keep the branch as-is (I'll handle it later)
+  4. Discard this work
+
+  Which option?
+
+✻ Crunched for 54m 34s · done Wednesday, Jul 15 at 9:50 PM
+
+※ recap: Built the complete LeMan Android app from the spec on branch implement-app, with all tests green. Next action: tell me whether to merge to main, open a PR, keep the branch, or discard it. (disable recaps in /config)
+
+❯ 1                                                                             
+
+  Merged implement-app (ctrl+o to expand)
+
+⏺ Merged (fast-forward). Verifying tests on main, then deleting the branch:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Merged to main and cleaned up. The full LeMan implementation is now on main
+  (fast-forward, 13 commits), the implement-app branch is deleted, and the
+  verification suite passed on the merged result — 131 unit tests, screenshot
+  verification against the committed goldens, and a clean debug build.
+
+  One note: main is now 16 commits ahead of origin/main — I haven't pushed. Say
+  the word if you want that pushed.
+
+  Where things stand for trying it out:
+  - Run it: ./gradlew installDebug (or the android-emulator-run skill) — the
+    debug build installs as net.liquidx.leman.debug alongside any release
+    install. Enter your HERMES_API_KEY on the config screen; the default URL
+    https://api.gent.ino.ink is pre-filled.
+  - No gateway handy: the debug tab (warn-tinted, debug builds only) has a
+    mock-server toggle with demo/streaming/needs-you/hostile scenarios, plus
+    "reseed demo data" to load the design-mock threads.
+  - Screenshots: re-record with ./gradlew testDebugUnitTest 
+    -Proborazzi.test.record=true, verify with -Proborazzi.test.verify=true (the
+    Roborazzi Gradle plugin doesn't support AGP 9 yet, so it's flags instead of
+    the recordRoborazziDebug task).
+  - Instrumented/e2e tests are written and compiling but haven't run — no
+    emulator was connected. ./gradlew connectedDebugAndroidTest once one is up.
+
+✻ Brewed for 58s · done Thursday, Jul 16 at 7:53 AM
+
+※ recap: Implemented the entire LeMan Android app from docs/spec (data layer, design system, four screens, debug tooling, 131 tests green) and merged it to main. Next: push to origin or run it on an emulator to try it live. (disable recaps in /config)

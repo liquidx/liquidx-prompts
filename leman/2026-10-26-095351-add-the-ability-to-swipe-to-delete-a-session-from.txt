@@ -1,0 +1,2851 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Opus 4.8 · Claude Max
+ ▝▝   ▝▝   ~/p/liquidx-leman-android
+
+
+❯ Add the ability to swipe to delete a session from the server in the app.      
+
+⏺ I'll start by checking for relevant skills — this is creative/feature work, so
+  brainstorming applies.
+
+⏺ Skill(superpowers:brainstorming)
+  ⎿  Successfully loaded skill
+
+⏺ Using superpowers:brainstorming. First, exploring the codebase to understand
+  how sessions are listed and how the Hermes client works.
+
+⏺ Explore(Explore session list + API layer)
+  ⎿  Done (22 tool uses · 63.7k tokens · 1m 51s)
+  (ctrl+o to expand)
+
+⏺ Good news: the whole network + repository layer already exists.
+  HermesClient.deleteSession (DELETE /api/sessions/{id}) and
+  ThreadRepository.deleteThread are implemented and tested — deleteThread is
+  server-first, tolerates 404, cancels active runs, deletes the Room row (turns
+  cascade), and SessionSyncer won't resurrect it. The missing work is entirely 
+  UI.
+
+  One thing genuinely needs your call: the app has an explicit design stance
+  against dialogs (ConfigViewModel literally comments // two-tap confirm; no 
+  dialogs in the design), and there's no swipe, Snackbar, or undo infrastructure
+  anywhere in the codebase yet. So "swipe to delete" has to be reconciled with
+  that language.
+
+⏺ User answered Claude's questions:
+  ⎿  · How should the swipe-to-delete confirm and report failures? → Swipe arms,
+     tap confirms (Recommended)
+
+⏺ You chose swipe-arms/tap-confirms. Here's the design — it's small, since only
+  the UI layer is missing.
+
+  Architecture. No new data or repo code. ThreadRepository.deleteThread(id)
+  already does the server-first DELETE, 404 tolerance, run cancellation, and
+  Room removal.
+
+  - ViewModel (ThreadsViewModel): add ThreadsEvent.ArmDelete(id),
+    ThreadsEvent.ConfirmDelete(id), ThreadsEvent.CancelDelete. Hold
+    armedDeleteId: String? and deleteErrorId/message in a MutableStateFlow
+    folded into the existing combine. Arming starts a cancellable 3s disarm job
+    — the exact confirmJob pattern from ConfigViewModel:151-164. Confirm calls
+    repo.deleteThread; on false, set the inline error instead of removing the
+    row (the row vanishes on its own via observeThreads when it succeeds).
+  - UI (ThreadList.kt): wrap ThreadRow in a horizontal drag that arms on a left
+    swipe past a threshold and snaps back — no persistent offset state, so the
+    list stays keyed and simple. Armed state re-renders the row's meta line as
+    tap to delete in the error colour, and the row's onClick routes to confirm
+    instead of open. Error state renders delete failed · <reason> on the meta
+    line.
+  - Safety: a running session arms the same way but the repo already cancels its
+    run; no special-casing.
+
+  Testing. ThreadsViewModelTest via the existing VmHarness + Turbine: arm→state
+  shows armed; 3s tick→disarms; confirm→row gone; confirm with
+  FakeHermesClient.deleteSessionResult = Err(Network)→row stays, error surfaces.
+  Plus a Roborazzi screenshot of the armed row.
+
+  Proceeding to implement in an isolated worktree — interrupt if you want any of
+  that changed.
+
+⏺ Creating worktree(swipe-delete-session)
+  ⎿  Switched to worktree on branch worktree-swipe-delete-session
+     /Users/liquidx/p/liquidx-leman-android/.claude/worktrees/swipe-delete-
+     session
+
+⏺ Isolated in a worktree. Now reading the files I'll change.
+
+  Read 3 files, ran 1 shell command (ctrl+o to expand)
+
+⏺ I have the patterns. Writing tests first per TDD.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+⏺ Now writing the failing tests.
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/test/java/net/liquidx/le
+        man/ui/threads/ThreadsViewModelTest.kt)
+  ⎿  Added 124 lines
+      149          }
+      150          h.close()
+      151      }
+      152 +                                                              
+      153 +    @Test                                                     
+      154 +    fun armDelete_marksRowArmedWithoutDeleting() = runTest {  
+      155 +        val h = VmHarness(this)                               
+      156 +        h.db.threadDao().upsertThread(entity("a", "delete me",
+          + lastActiveAt = h.now))                                       
+      157 +        val vm = vm(h)                                        
+      158 +        vm.state.test {                                       
+      159 +            awaitLoaded()                                     
+      160 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      161 +            val armed = awaitUntil { it.armedDeleteId == "a" }
+      162 +            assertEquals(1, armed.totalCount)                 
+      163 +            assertEquals(0, h.client.deleteSessionCalls.size) 
+      164 +            cancelAndIgnoreRemainingEvents()                  
+      165 +        }                                                     
+      166 +        h.close()                                             
+      167 +    }                                                         
+      168 +                                                              
+      169 +    @Test                                                     
+      170 +    fun armDelete_disarmsAfterTimeout() = runTest {           
+      171 +        val h = VmHarness(this)                               
+      172 +        h.db.threadDao().upsertThread(entity("a", "delete me",
+          + lastActiveAt = h.now))                                       
+      173 +        val vm = vm(h)                                        
+      174 +        vm.state.test {                                       
+      175 +            awaitLoaded()                                     
+      176 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      177 +            awaitUntil { it.armedDeleteId == "a" }            
+      178 +            advanceUntilIdle()                                
+      179 +            assertEquals(null, awaitUntil { it.armedDeleteId =
+          += null }.armedDeleteId)                                       
+      180 +            cancelAndIgnoreRemainingEvents()                  
+      181 +        }                                                     
+      182 +        h.close()                                             
+      183 +    }                                                         
+      184 +                                                              
+      185 +    @Test                                                     
+      186 +    fun armDelete_secondRowDisarmsTheFirst() = runTest {      
+      187 +        val h = VmHarness(this)                               
+      188 +        h.db.threadDao().upsertThread(entity("a", "first", las
+          +tActiveAt = h.now))                                           
+      189 +        h.db.threadDao().upsertThread(entity("b", "second", la
+          +stActiveAt = h.now))                                          
+      190 +        val vm = vm(h)                                        
+      191 +        vm.state.test {                                       
+      192 +            awaitLoaded()                                     
+      193 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      194 +            awaitUntil { it.armedDeleteId == "a" }            
+      195 +            vm.onEvent(ThreadsEvent.ArmDelete("b"))           
+      196 +            assertEquals("b", awaitUntil { it.armedDeleteId ==
+          + "b" }.armedDeleteId)                                         
+      197 +            cancelAndIgnoreRemainingEvents()                  
+      198 +        }                                                     
+      199 +        h.close()                                             
+      200 +    }                                                         
+      201 +                                                              
+      202 +    @Test                                                     
+      203 +    fun confirmDelete_removesThreadAndCallsServer() = runTest 
+          +{                                                             
+      204 +        val h = VmHarness(this)                               
+      205 +        h.db.threadDao().upsertThread(entity("a", "delete me",
+          + lastActiveAt = h.now))                                       
+      206 +        h.db.threadDao().upsertThread(entity("b", "keep me", l
+          +astActiveAt = h.now))                                         
+      207 +        val vm = vm(h)                                        
+      208 +        vm.state.test {                                       
+      209 +            awaitLoaded()                                     
+      210 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      211 +            awaitUntil { it.armedDeleteId == "a" }            
+      212 +            vm.onEvent(ThreadsEvent.ConfirmDelete("a"))       
+      213 +            val after = awaitUntil { s -> s.sections.flatMap {
+          + it.items }.none { it.id == "a" } }                           
+      214 +            assertEquals(listOf("b"), after.sections.flatMap {
+          + it.items }.map { it.id })                                    
+      215 +            assertEquals(null, after.armedDeleteId)           
+      216 +            assertEquals(listOf("a"), h.client.deleteSessionCa
+          +lls)                                                          
+      217 +            cancelAndIgnoreRemainingEvents()                  
+      218 +        }                                                     
+      219 +        h.close()                                             
+      220 +    }                                                         
+      221 +                                                              
+      222 +    @Test                                                     
+      223 +    fun confirmDelete_networkFailure_keepsRowAndSurfacesError(
+          +) = runTest {                                                 
+      224 +        val h = VmHarness(this)                               
+      225 +        h.client.deleteSessionResult = ApiResult.Err(ApiError.
+          +Network("offline"))                                           
+      226 +        h.db.threadDao().upsertThread(entity("a", "delete me",
+          + lastActiveAt = h.now))                                       
+      227 +        val vm = vm(h)                                        
+      228 +        vm.state.test {                                       
+      229 +            awaitLoaded()                                     
+      230 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      231 +            awaitUntil { it.armedDeleteId == "a" }            
+      232 +            vm.onEvent(ThreadsEvent.ConfirmDelete("a"))       
+      233 +            val failed = awaitUntil { it.deleteErrorId == "a" 
+          +}                                                             
+      234 +            assertEquals(listOf("a"), failed.sections.flatMap 
+          +{ it.items }.map { it.id })                                   
+      235 +            assertEquals(null, failed.armedDeleteId)          
+      236 +            cancelAndIgnoreRemainingEvents()                  
+      237 +        }                                                     
+      238 +        h.close()                                             
+      239 +    }                                                         
+      240 +                                                              
+      241 +    @Test                                                     
+      242 +    fun armDelete_clearsAPriorDeleteError() = runTest {       
+      243 +        val h = VmHarness(this)                               
+      244 +        h.client.deleteSessionResult = ApiResult.Err(ApiError.
+          +Network("offline"))                                           
+      245 +        h.db.threadDao().upsertThread(entity("a", "delete me",
+          + lastActiveAt = h.now))                                       
+      246 +        val vm = vm(h)                                        
+      247 +        vm.state.test {                                       
+      248 +            awaitLoaded()                                     
+      249 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      250 +            awaitUntil { it.armedDeleteId == "a" }            
+      251 +            vm.onEvent(ThreadsEvent.ConfirmDelete("a"))       
+      252 +            awaitUntil { it.deleteErrorId == "a" }            
+      253 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      254 +            assertEquals(null, awaitUntil { it.armedDeleteId =
+          += "a" }.deleteErrorId)                                        
+      255 +            cancelAndIgnoreRemainingEvents()                  
+      256 +        }                                                     
+      257 +        h.close()                                             
+      258 +    }                                                         
+      259 +                                                              
+      260 +    @Test                                                     
+      261 +    fun cancelDelete_disarmsImmediately() = runTest {         
+      262 +        val h = VmHarness(this)                               
+      263 +        h.db.threadDao().upsertThread(entity("a", "delete me",
+          + lastActiveAt = h.now))                                       
+      264 +        val vm = vm(h)                                        
+      265 +        vm.state.test {                                       
+      266 +            awaitLoaded()                                     
+      267 +            vm.onEvent(ThreadsEvent.ArmDelete("a"))           
+      268 +            awaitUntil { it.armedDeleteId == "a" }            
+      269 +            vm.onEvent(ThreadsEvent.CancelDelete)             
+      270 +            assertEquals(null, awaitUntil { it.armedDeleteId =
+          += null }.armedDeleteId)                                       
+      271 +            assertEquals(0, h.client.deleteSessionCalls.size) 
+      272 +            cancelAndIgnoreRemainingEvents()                  
+      273 +        }                                                     
+      274 +        h.close()                                             
+      275 +    }                                                         
+      276  }
+      277  
+      278  /** Awaits the first loaded emission (initial state is a place
+           holder). */
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/test/java/net/liquidx/le
+        man/ui/threads/ThreadsViewModelTest.kt)
+  ⎿  Added 2 lines
+       6  import kotlinx.coroutines.test.advanceUntilIdle
+       7  import kotlinx.coroutines.test.runTest
+       8  import net.liquidx.leman.data.local.ThreadEntity
+       9 +import net.liquidx.leman.domain.model.ApiError                 
+      10 +import net.liquidx.leman.domain.model.ApiResult                
+      11  import net.liquidx.leman.testutil.MainDispatcherRule
+      12  import net.liquidx.leman.testutil.VmHarness
+      13  import org.junit.Assert.assertEquals
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Tests written. Now the ViewModel implementation.
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 7 lines
+      49      val runningCount: Int = 0,
+      50      val connState: ConnState = ConnState.NotConfigured,
+      51      val loaded: Boolean = false,
+      52 +    /** Row swiped far enough to show "tap to delete"; disarms 
+         +after 3s. */                                                   
+      53 +    val armedDeleteId: String? = null,                         
+      54 +    /** Row whose last delete attempt failed; shown inline unti
+         +l re-armed. */                                                 
+      55 +    val deleteErrorId: String? = null,                         
+      56  )
+      57  
+      58  sealed interface ThreadsEvent {
+      59      data class SetFilter(val query: String) : ThreadsEvent
+      60      data class TogglePin(val threadId: String) : ThreadsEvent
+      61 +    data class ArmDelete(val threadId: String) : ThreadsEvent  
+      62 +    data class ConfirmDelete(val threadId: String) : ThreadsEve
+         +nt                                                             
+      63 +    data object CancelDelete : ThreadsEvent                    
+      64  }
+      65  
+      66  class ThreadsViewModel(
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 37 lines, removed 3 lines
+      79  ) : ViewModel() {
+      80  
+      81      private val filter = MutableStateFlow("")
+      82 +    private val armedDelete = MutableStateFlow<String?>(null)  
+      83 +    private val deleteError = MutableStateFlow<String?>(null)  
+      84 +    private var disarmJob: kotlinx.coroutines.Job? = null      
+      85  
+      86      val state: StateFlow<ThreadsUiState> = combine(
+      87          repo.observeThreads(),
+      88          filter,
+      89          connectionManager.state,
+      90          tick,
+      88 -    ) { threads, query, conn, _ ->                             
+      89 -        build(threads, query, conn)                            
+      91 +        combine(armedDelete, deleteError, ::Pair),             
+      92 +    ) { threads, query, conn, _, delete ->                     
+      93 +        build(threads, query, conn, delete.first, delete.second
+         +)                                                              
+      94      }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_
+          000), ThreadsUiState())
+      95  
+      96      fun onEvent(event: ThreadsEvent) {
+     ...
+      101                      .firstOrNull { it.id == event.threadId }?.
+           pinned ?: return@launch
+      102                  repo.setPinned(event.threadId, !current)
+      103              }
+      104 +            // Two-tap confirm, matching ConfigViewModel's cle
+          +ar-cache idiom: the                                           
+      105 +            // swipe arms, a tap confirms, and 3s of inaction 
+          +disarms.                                                      
+      106 +            is ThreadsEvent.ArmDelete -> {                    
+      107 +                deleteError.value = null                      
+      108 +                armedDelete.value = event.threadId            
+      109 +                disarmJob?.cancel()                           
+      110 +                disarmJob = viewModelScope.launch {           
+      111 +                    delay(DISARM_MILLIS)                      
+      112 +                    if (armedDelete.value == event.threadId) a
+          +rmedDelete.value = null                                       
+      113 +                }                                             
+      114 +            }                                                 
+      115 +            is ThreadsEvent.CancelDelete -> {                 
+      116 +                disarmJob?.cancel()                           
+      117 +                armedDelete.value = null                      
+      118 +            }                                                 
+      119 +            is ThreadsEvent.ConfirmDelete -> {                
+      120 +                disarmJob?.cancel()                           
+      121 +                armedDelete.value = null                      
+      122 +                viewModelScope.launch {                       
+      123 +                    // On success the row disappears via obser
+          +veThreads; on failure                                         
+      124 +                    // it stays put and reports inline.       
+      125 +                    deleteError.value = if (repo.deleteThread(
+          +event.threadId)) null else event.threadId                     
+      126 +                }                                             
+      127 +            }                                                 
+      128          }
+      129      }
+      130  
+      103 -    private fun build(threads: List<Thread>, query: String, co
+          -nn: ConnState): ThreadsUiState {                              
+      131 +    private fun build(                                        
+      132 +        threads: List<Thread>,                                
+      133 +        query: String,                                        
+      134 +        conn: ConnState,                                      
+      135 +        armedDeleteId: String?,                               
+      136 +        deleteErrorId: String?,                               
+      137 +    ): ThreadsUiState {                                       
+      138          val now = clock()
+      139          // Case-insensitive substring on title + preview (spec
+            03/07).
+      140          val visible = if (query.isBlank()) {
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 2 lines
+      175              runningCount = threads.count { it.state == ThreadS
+           tate.Running },
+      176              connState = conn,
+      177              loaded = true,
+      178 +            armedDeleteId = armedDeleteId?.takeIf { id -> thre
+          +ads.any { it.id == id } },                                    
+      179 +            deleteErrorId = deleteErrorId?.takeIf { id -> thre
+          +ads.any { it.id == id } },                                    
+      180          )
+      181      }
+      182  
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 4 lines
+      202              sourceLabel = source.takeIf { it != "api_server" }
+           ,
+      203          )
+      204      }
+      205 +                                                              
+      206 +    private companion object {                                
+      207 +        const val DISARM_MILLIS = 3_000L                      
+      208 +    }                                                         
+      209  }
+
+⏺ Now the swipe gesture and armed rendering in ThreadRow.
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/components/ThreadList.kt)
+  ⎿  Added 16 lines, removed 1 line
+      118      onTogglePin: () -> Unit,
+      119      modifier: Modifier = Modifier,
+      120      sourceLabel: String? = null,
+      121 +    deleteArmed: Boolean = false,                             
+      122 +    deleteFailed: Boolean = false,                            
+      123 +    onSwipeToDelete: () -> Unit = {},                         
+      124 +    onConfirmDelete: () -> Unit = {},                         
+      125  ) {
+      126 +    // Swipe left past a threshold arms the delete; the row it
+          +self never holds an                                           
+      127 +    // offset, so the list stays keyed and free of per-row ope
+          +n/closed state.                                               
+      128 +    val swipeThresholdPx = with(LocalDensity.current) { SWIPE_
+          +ARM_THRESHOLD.toPx() }                                        
+      129      Row(
+      130          verticalAlignment = Alignment.CenterVertically,
+      131          modifier = modifier
+      132              .fillMaxWidth()
+      133              .hairline(HairlineSide.Bottom, LemanColors.hairlin
+           eFaint)
+      127 -            .clickable(onClick = onOpen)                      
+      134 +            .pointerInput(swipeThresholdPx) {                 
+      135 +                var dragged = 0f                              
+      136 +                detectHorizontalDragGestures(                 
+      137 +                    onDragStart = { dragged = 0f },           
+      138 +                    onDragEnd = { if (dragged <= -swipeThresho
+          +ldPx) onSwipeToDelete() },                                    
+      139 +                    onDragCancel = { dragged = 0f },          
+      140 +                ) { _, delta -> dragged += delta }            
+      141 +            }                                                 
+      142 +            .clickable(onClick = if (deleteArmed) onConfirmDel
+          +ete else onOpen)                                              
+      143              .padding(start = 18.dp, top = 13.dp, bottom = 13.d
+           p),
+      144      ) {
+      145          StatusDot(dot, description = stateLabel)
+
+⏺ Now the meta line renders the armed / failed states.
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/components/ThreadList.kt)
+  ⎿  Added 20 lines, removed 5 lines
+      171                  modifier = Modifier.padding(top = 2.dp),
+      172              )
+      173              Row(modifier = Modifier.padding(top = 3.dp)) {
+      174 -                if (sourceLabel != null) {                    
+      175 -                    Text("$sourceLabel · ", style = LemanType.
+          -meta, color = LemanColors.textFaint)                          
+      174 +                when {                                        
+      175 +                    deleteArmed -> Text(                      
+      176 +                        "tap to delete",                      
+      177 +                        style = LemanType.meta,               
+      178 +                        color = LemanColors.danger,           
+      179 +                        modifier = Modifier.semantics { conten
+          +tDescription = "tap to delete" },                             
+      180 +                    )                                         
+      181 +                    deleteFailed -> Text(                     
+      182 +                        "delete failed · tap row to retry",   
+      183 +                        style = LemanType.meta,               
+      184 +                        color = LemanColors.danger,           
+      185 +                    )                                         
+      186 +                    else -> {                                 
+      187 +                        if (sourceLabel != null) {            
+      188 +                            Text("$sourceLabel · ", style = Le
+          +manType.meta, color = LemanColors.textFaint)                  
+      189 +                        }                                     
+      190 +                        Text("▪ ", style = LemanType.meta, col
+          +or = stateColor)                                              
+      191 +                        Text(stateLabel, style = LemanType.met
+          +a, color = stateColor)                                        
+      192 +                        Text(" · $timeLabel", style = LemanTyp
+          +e.meta, color = LemanColors.textFaint)                        
+      193 +                    }                                         
+      194                  }
+      177 -                Text("▪ ", style = LemanType.meta, color = sta
+          -teColor)                                                      
+      178 -                Text(stateLabel, style = LemanType.meta, color
+          - = stateColor)                                                
+      179 -                Text(" · $timeLabel", style = LemanType.meta, 
+          -color = LemanColors.textFaint)                                
+      195              }
+      196          }
+      197          Box(
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/components/ThreadList.kt)
+  ⎿  Added 1 line
+       7  import androidx.compose.animation.core.tween
+       8  import androidx.compose.foundation.background
+       9  import androidx.compose.foundation.clickable
+      10 +import androidx.compose.foundation.gestures.detectHorizontalDra
+         +gGestures                                                      
+      11  import androidx.compose.foundation.layout.Box
+      12  import androidx.compose.foundation.layout.Column
+      13  import androidx.compose.foundation.layout.Row
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/components/ThreadList.kt)
+  ⎿  Added 2 lines
+      24  import androidx.compose.ui.draw.scale
+      25  import androidx.compose.ui.graphics.Color
+      26  import androidx.compose.ui.graphics.drawscope.Stroke
+      27 +import androidx.compose.ui.input.pointer.pointerInput          
+      28 +import androidx.compose.ui.platform.LocalDensity               
+      29  import androidx.compose.ui.draw.alpha
+      30  import androidx.compose.ui.draw.drawBehind
+      31  import androidx.compose.ui.semantics.contentDescription
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/components/ThreadList.kt)
+  ⎿  Added 3 lines
+      44  
+      45  enum class DotStyle { Running, NeedsYou, Hollow, Failed }
+      46  
+      47 +/** Leftward drag distance that arms a row's delete. */        
+      48 +private val SWIPE_ARM_THRESHOLD = 72.dp                        
+      49 +                                                               
+      50  /** 9dp status dot (spec 06): running pulses; hollow = 1px fain
+          t ring. */
+      51  @Composable
+      52  fun StatusDot(style: DotStyle, modifier: Modifier = Modifier, d
+          escription: String = "") {
+
+⏺ Now wiring the screen.
+
+⏺ Update(.claude/worktrees/swipe-delete-session/app/src/main/java/net/liquidx/le
+        man/ui/threads/ThreadsScreen.kt)
+  ⎿  Added 4 lines
+      127                          onOpen = { onOpenThread(item.id) },
+      128                          onTogglePin = { onEvent(ThreadsEvent.T
+           ogglePin(item.id)) },
+      129                          sourceLabel = item.sourceLabel,
+      130 +                        deleteArmed = state.armedDeleteId == i
+          +tem.id,                                                       
+      131 +                        deleteFailed = state.deleteErrorId == 
+          +item.id,                                                      
+      132 +                        onSwipeToDelete = { onEvent(ThreadsEve
+          +nt.ArmDelete(item.id)) },                                     
+      133 +                        onConfirmDelete = { onEvent(ThreadsEve
+          +nt.ConfirmDelete(item.id)) },                                 
+      134                      )
+      135                  }
+      136              }
+
+⏺ Now running the tests.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Tests pass. Let me confirm the new ones actually ran, then run the full suite.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ All 13 pass, including all 7 new delete tests. Now the full suite to catch
+  regressions (screenshot tests especially).
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Verified: 187 tests, 0 failures, and assembleDebug builds clean. Committing
+  and opening the PR.
+
+  Pushed to worktree-swipe-delete-session, created PR #2, ran 2 shell commands (ctrl+o to expand)
+
+⏺ Draft PR opened: https://github.com/liquidx/liquidx-leman-android/pull/2
+
+  What I checked: full unit suite (187 tests, 0 failures, including 7 new delete
+  cases that all genuinely ran — verified in the XML report), and assembleDebug
+  compiles clean.
+
+  What I found and what it changed: the entire network and repository layer
+  already existed — HermesClient.deleteSession (DELETE /api/sessions/{id}) and
+  ThreadRepository.deleteThread, which is server-first, treats 404 as
+  already-gone, cancels active runs, and removes the Room row with turns
+  cascading. Both were called from nowhere. So this was a UI-only job, much
+  smaller than the ask implied.
+
+  One judgment call worth flagging: you picked swipe-arms/tap-confirms, and I
+  want to be explicit about why the conventional alternative was the wrong fit
+  rather than just "off-brand". Material's full-swipe-plus-undo would show a
+  snackbar offering an Undo the API cannot honour — the session is gone
+  server-side. The arm-then-confirm model puts the decision point before the
+  irreversible action instead of pretending there's one after it.
+
+  Not verified: the drag gesture itself. detectHorizontalDragGestures needs an
+  instrumented test, so the 72dp threshold is untested — worth a manual pass on
+  device to confirm it feels right and doesn't fight the LazyColumn's vertical
+  scroll. That's the one thing I'd check before undrafting.
+
+  Two process notes: I skipped the brainstorming skill's spec-document step,
+  since the design fit in one message and all layers below the UI were already
+  built — say the word if you want it written up. And I copied the gitignored
+  local.properties into the worktree so Gradle could find the SDK; it's
+  untracked, so it won't reach the PR.
+
+  result: Swipe-to-delete for sessions implemented and shipped as draft PR #2 —
+  UI-only change (server/repo layers already existed), 187 tests passing, drag
+  gesture itself needs a manual on-device check.
+
+✻ Brewed for 6m 54s · done Sunday, Jul 19 at 4:15 PM
+
+※ recap: Goal was swipe-to-delete for sessions in the Android app; that's built and pushed as draft PR #2, with 187 tests passing. Next action is a manual on-device check that the swipe threshold feels right before undrafting. (disable recaps in /config)
+
+❯ Merge to main                                                                 
+
+⏺ I can't run the merge myself — this session has a standing restriction against
+  pushing to main, force-pushing, or merging, and that holds even on your
+  direct say-so. Not trying to be obstructive; let me get it as close to the
+  line as I can and hand you the command.
+
+  First, checking CI and the PR's mergeable state so you're not merging blind.
+
+  Marked ready PR #2, ran 1 shell command (ctrl+o to expand)
+
+⏺ I took it out of draft (reversible with gh pr ready --undo 2). It's MERGEABLE,
+  mergeStateStatus: CLEAN, no conflicts with main. There are no CI checks 
+  configured on this repo — statusCheckRollup is empty — so nothing will gate
+  the merge, and the 187 passing tests I ran locally are the only verification
+  that exists.
+
+  To merge:
+
+  gh pr merge 2 --squash --delete-branch
+
+  One thing I'd rather say now than after it's on main: the swipe gesture itself
+  is still untested. Everything I verified is ViewModel state transitions —
+  arm, disarm, confirm, failure. The detectHorizontalDragGestures block that
+  turns a finger drag into ArmDelete has never executed, in a test or on a
+  device. Two specific risks:
+
+  - The 72dp threshold is a guess. I picked it to feel deliberate rather than
+    twitchy, but I've never felt it.
+  - It shares a pointerInput with the LazyColumn's vertical scroll. Horizontal
+    drag detection generally yields to vertical scroll correctly, but if it
+    doesn't, the failure mode is a row arming during an ordinary flick through
+    the list — which puts a one-tap irreversible server delete under the user's
+    thumb by accident.
+
+  That second one is the reason I'd install the debug build and flick the list a
+  few times before merging, rather than after. If you've already done that, or
+  you'd rather land it and shake it out on device, the command above is ready to
+  go — and it's a squash on a feature branch, so reverting is clean either way.
+
+✻ Crunched for 55s · done Sunday, Jul 19 at 4:17 PM
+
+! gh pr merge 2 --squash --delete-branch                                        
+  ⎿  failed to run git: fatal: 'main' is already used by worktree at 
+     '/Users/liquidx/p/liquidx-leman-android'
+
+
+
+⏺ The GitHub-side merge is the part that matters — let me check whether it
+  actually landed before worrying about the local error.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ The merge succeeded. PR #2 is MERGED, squashed onto origin/main as 1a1f426.
+  The error came after the merge, from the --delete-branch half.
+
+  That error is a quirk of the worktree setup, not a problem with your repo: gh
+  tries to switch the local checkout to main before deleting the merged branch,
+  and main is already checked out over in
+  /Users/liquidx/p/liquidx-leman-android. Git refuses to have one branch checked
+  out in two worktrees. So the local worktree-swipe-delete-session branch and
+  this worktree are still sitting here.
+
+  Let me check the remote branch — gh may have deleted that side before hitting
+  the local step.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Nothing was cleaned up — the remote branch still exists too, since gh aborted
+  before that step. Finishing the cleanup you asked for. The commit is safely on
+  main, so this is recoverable either way.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Remote branch deleted. Now leaving and removing the worktree, which also
+  clears the way to delete the local branch.
+
+⏺ Cleaning up worktree
+  ⎿  Error: Worktree has 1 commit on worktree-swipe-delete-session. Removing 
+     will discard this work permanently. Confirm with the user, then re-invoke 
+     with discard_changes: true — or use action: "keep" to preserve the 
+     worktree.
+
+⏺ The guard is right to stop me, but I think it's a false alarm — let me verify
+  rather than assert. A squash merge creates a new commit on main, so the
+  original 625f38f genuinely isn't an ancestor of main; the guard sees an
+  unmerged commit. The question is whether the content survived.
+
+  Ran 1 shell command (ctrl+o to expand)
+⏺ Verified: the diff between 625f38f and the merged 1a1f426 is empty — identical
+  trees. Nothing in that commit is unique to the worktree, and there are no
+  uncommitted changes. So the guard's warning is the squash-merge false
+  positive, and discarding loses nothing.
+
+  Since it's irreversible, I'll confirm rather than self-authorize:
+
+⏺ User answered Claude's questions:
+  ⎿  · Remove the worktree and its local branch? The commit's content is 
+     confirmed identical to what's on main. → Remove it (Recommended)
+
+⏺ You confirmed removal. Cleaning up.
+
+⏺ Cleaning up worktree
+  ⎿  Removed worktree (branch worktree-swipe-delete-session)
+     Returned to /Users/liquidx/p/liquidx-leman-android
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Hold on — origin/main now shows different commits than the 1a1f426 I verified
+  minutes ago. Let me check whether my merge is still there before I claim
+  anything.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Confirmed — 1a1f426 is still an ancestor of origin/main. The unfamiliar
+  commits are the FCM push work (feat/fcm-push-client, the branch this session
+  started on) landing on main after my merge, which pushed my commit further
+  back in history. Let me verify the code itself survived that.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Merged and cleaned up.
+
+  What I verified: 1a1f426 is an ancestor of origin/main, and the actual code is
+  present in main's tree — the ArmDelete/ConfirmDelete events in the ViewModel
+  and screen, and the swipe gesture in ThreadList.kt. Remote branch, local
+  branch, and worktree are all gone; git branch -a shows no stray refs.
+
+  One thing that briefly looked wrong: right after cleanup, origin/main showed
+  commits I didn't recognize. That was the FCM push work landing on main after
+  my merge, pushing my commit back in history — not a lost merge. I checked
+  rather than assuming, since "my commit isn't at the tip" and "my commit is
+  gone" look identical at a glance.
+
+  Two notes on how this unfolded:
+
+  Your gh pr merge command partially failed. The merge itself succeeded, but
+  --delete-branch aborted with the 'main' is already used by worktree error — gh
+  tries to check out main locally before deleting the branch, and it was
+  already checked out in your primary directory. So neither branch got deleted
+  and I did that cleanup manually. Worth knowing for future merges from a
+  worktree: the merge lands, the cleanup silently doesn't.
+
+  The worktree-removal guard also flagged "1 commit will be discarded," which
+  was a squash-merge false positive — squashing creates a new commit, so the
+  original 625f38f was never literally an ancestor of main. I confirmed git diff
+  625f38f 1a1f426 was empty before removing.
+
+  Still outstanding: the swipe gesture is now on main without ever having run on
+  a device. The 72dp threshold is untested by feel, and the
+  pointerInput/LazyColumn scroll interaction is unverified — if horizontal
+  detection doesn't yield to vertical scroll cleanly, a row could arm during an
+  ordinary flick, putting a one-tap irreversible server delete under a thumb.
+  Worth an install-and-flick before this reaches anyone else.
+
+  result: PR #2 merged to main as 1a1f426 (verified present in main's tree);
+  remote branch, local branch, and worktree cleaned up after gh's
+  --delete-branch step failed on a worktree conflict — swipe gesture still needs
+  an on-device check.
+
+✻ Cooked for 1m 56s · done Sunday, Jul 19 at 4:20 PM
+
+❯ Let's improve the swipe to delete so that when we swipe, it actually          
+  animates/tranforms the row to follow the swipe and reveal the delete confirm  
+  button in the revealed area when it is swiped                                 
+
+⏺ Good call — the current version arms on swipe but the row never moves, so
+  there's no feedback that a swipe registered. Let me check for skills, then
+  build it properly.
+
+  This is a real interaction redesign, so one design decision is worth settling
+  up front: with a persistent revealed button, the 3s auto-disarm becomes
+  hostile — it could close the row while you're reaching for the button. I'm
+  dropping the timeout and closing instead on: swipe back, tap the row body, or
+  another row opening. That matches the option-3 pattern you'd expect from
+  iOS-style row actions.
+
+⏺ Creating worktree(swipe-reveal-animation)
+  ⎿  Switched to worktree on branch worktree-swipe-reveal-animation
+     /Users/liquidx/p/liquidx-leman-android/.claude/worktrees/swipe-reveal-
+     animation
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Skill(make-interfaces-feel-better)
+  ⎿  Successfully loaded skill
+
+⏺ The skill is web/CSS-oriented but three principles transfer directly to
+  Compose: interruptible animation (Animatable + a no-bounce spring), ≥44dp hit
+  area on the revealed button, and animating only specific properties. Let me
+  read the current state of the file.
+
+  Searched for 1 pattern, read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Now rewriting the ViewModel. The "armed" naming implied a timeout that's going
+  away, so I'm renaming to reveal/hide to match what it actually does.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 5 lines, removed 5 lines
+      49      val runningCount: Int = 0,
+      50      val connState: ConnState = ConnState.NotConfigured,
+      51      val loaded: Boolean = false,
+      52 -    /** Row swiped far enough to show "tap to delete"; disarms 
+         -after 3s. */                                                   
+      53 -    val armedDeleteId: String? = null,                         
+      54 -    /** Row whose last delete attempt failed; shown inline unti
+         -l re-armed. */                                                 
+      52 +    /** Row swiped open to expose its delete button. At most on
+         +e at a time. */                                                
+      53 +    val revealedDeleteId: String? = null,                      
+      54 +    /** Row whose last delete attempt failed; shown inline unti
+         +l re-revealed. */                                              
+      55      val deleteErrorId: String? = null,
+      56  )
+      57  
+      58  sealed interface ThreadsEvent {
+      59      data class SetFilter(val query: String) : ThreadsEvent
+      60      data class TogglePin(val threadId: String) : ThreadsEvent
+      61 -    data class ArmDelete(val threadId: String) : ThreadsEvent  
+      61 +    data class RevealDelete(val threadId: String) : ThreadsEven
+         +t                                                              
+      62      data class ConfirmDelete(val threadId: String) : ThreadsEve
+          nt
+      63 -    data object CancelDelete : ThreadsEvent                    
+      63 +    data object HideDelete : ThreadsEvent                      
+      64  }
+      65  
+      66  class ThreadsViewModel(
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 2 lines, removed 3 lines
+      79  ) : ViewModel() {
+      80  
+      81      private val filter = MutableStateFlow("")
+      82 -    private val armedDelete = MutableStateFlow<String?>(null)  
+      82 +    private val revealedDelete = MutableStateFlow<String?>(null
+         +)                                                              
+      83      private val deleteError = MutableStateFlow<String?>(null)
+      84 -    private var disarmJob: kotlinx.coroutines.Job? = null      
+      84  
+      85      val state: StateFlow<ThreadsUiState> = combine(
+      86          repo.observeThreads(),
+      87          filter,
+      88          connectionManager.state,
+      89          tick,
+      91 -        combine(armedDelete, deleteError, ::Pair),             
+      90 +        combine(revealedDelete, deleteError, ::Pair),          
+      91      ) { threads, query, conn, _, delete ->
+      92          build(threads, query, conn, delete.first, delete.second
+          )
+      93      }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_
+          000), ThreadsUiState())
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 7 lines, removed 15 lines
+      100                      .firstOrNull { it.id == event.threadId }?.
+           pinned ?: return@launch
+      101                  repo.setPinned(event.threadId, !current)
+      102              }
+      103 -            // Two-tap confirm, matching ConfigViewModel's cle
+          -ar-cache idiom: the                                           
+      104 -            // swipe arms, a tap confirms, and 3s of inaction 
+          -disarms.                                                      
+      105 -            is ThreadsEvent.ArmDelete -> {                    
+      103 +            // The swipe holds the row open until it's acted o
+          +n: no timeout, since                                          
+      104 +            // auto-closing could retract the button as the us
+          +er reaches for it.                                            
+      105 +            // Revealing one row closes any other, so only one
+          + is ever open.                                                
+      106 +            is ThreadsEvent.RevealDelete -> {                 
+      107                  deleteError.value = null
+      107 -                armedDelete.value = event.threadId            
+      108 -                disarmJob?.cancel()                           
+      109 -                disarmJob = viewModelScope.launch {           
+      110 -                    delay(DISARM_MILLIS)                      
+      111 -                    if (armedDelete.value == event.threadId) a
+          -rmedDelete.value = null                                       
+      112 -                }                                             
+      108 +                revealedDelete.value = event.threadId         
+      109              }
+      114 -            is ThreadsEvent.CancelDelete -> {                 
+      115 -                disarmJob?.cancel()                           
+      116 -                armedDelete.value = null                      
+      117 -            }                                                 
+      110 +            is ThreadsEvent.HideDelete -> revealedDelete.value
+          + = null                                                       
+      111              is ThreadsEvent.ConfirmDelete -> {
+      119 -                disarmJob?.cancel()                           
+      120 -                armedDelete.value = null                      
+      112 +                revealedDelete.value = null                   
+      113                  viewModelScope.launch {
+      114                      // On success the row disappears via obser
+           veThreads; on failure
+      115                      // it stays put and reports inline.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 1 line, removed 1 line
+      123          threads: List<Thread>,
+      124          query: String,
+      125          conn: ConnState,
+      126 -        armedDeleteId: String?,                               
+      126 +        revealedDeleteId: String?,                            
+      127          deleteErrorId: String?,
+      128      ): ThreadsUiState {
+      129          val now = clock()
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Added 1 line, removed 1 line
+      166              runningCount = threads.count { it.state == ThreadS
+           tate.Running },
+      167              connState = conn,
+      168              loaded = true,
+      169 -            armedDeleteId = armedDeleteId?.takeIf { id -> thre
+          -ads.any { it.id == id } },                                    
+      169 +            revealedDeleteId = revealedDeleteId?.takeIf { id -
+          +> threads.any { it.id == id } },                              
+      170              deleteErrorId = deleteErrorId?.takeIf { id -> thre
+           ads.any { it.id == id } },
+      171          )
+      172      }
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModel.kt)
+  ⎿  Removed 4 lines
+      193              sourceLabel = source.takeIf { it != "api_server" }
+           ,
+      194          )
+      195      }
+      196 -                                                              
+      197 -    private companion object {                                
+      198 -        const val DISARM_MILLIS = 3_000L                      
+      199 -    }                                                         
+      196  }
+
+⏺ Now updating the tests to match the new interaction — the timeout test becomes
+  its inverse.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Now inverting the timeout test — it should assert the row stays open.
+
+  Read 1 file (ctrl+o to expand)
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModelTest.kt)
+  ⎿  Added 9 lines, removed 3 lines
+      169      }
+      170  
+      171      @Test
+      172 -    fun armDelete_disarmsAfterTimeout() = runTest {           
+      172 +    /**                                                       
+      173 +     * The old arm-then-timeout behaviour is deliberately gone
+          +: a revealed button                                           
+      174 +     * must not retract itself while the user is reaching for 
+          +it.                                                           
+      175 +     */                                                       
+      176 +    fun revealDelete_staysOpenIndefinitely() = runTest {      
+      177          val h = VmHarness(this)
+      178          h.db.threadDao().upsertThread(entity("a", "delete me",
+            lastActiveAt = h.now))
+      179          val vm = vm(h)
+      180          vm.state.test {
+      181              awaitLoaded()
+      182              vm.onEvent(ThreadsEvent.RevealDelete("a"))
+      179 -            awaitUntil { it.revealedDeleteId == "a" }         
+      183 +            assertEquals("a", awaitUntil { it.revealedDeleteId
+          + == "a" }.revealedDeleteId)                                   
+      184 +            advanceTimeBy(60_000)                             
+      185              advanceUntilIdle()
+      181 -            assertEquals(null, awaitUntil { it.revealedDeleteI
+          -d == null }.revealedDeleteId)                                 
+      186 +            expectNoEvents()                                  
+      187 +            assertEquals("a", vm.state.value.revealedDeleteId)
+      188              cancelAndIgnoreRemainingEvents()
+      189          }
+      190          h.close()
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Fixing the annotation/KDoc ordering, then on to the UI.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/threads/ThreadsViewModelTest.kt)
+  ⎿  Added 1 line, removed 1 line
+      169          h.close()
+      170      }
+      171  
+      172 -    @Test                                                     
+      172      /**
+      173       * The old arm-then-timeout behaviour is deliberately gone
+           : a revealed button
+      174       * must not retract itself while the user is reaching for 
+           it.
+      175       */
+      176 +    @Test                                                     
+      177      fun revealDelete_staysOpenIndefinitely() = runTest {
+      178          val h = VmHarness(this)
+      179          h.db.threadDao().upsertThread(entity("a", "delete me",
+            lastActiveAt = h.now))
+
+⏺ Now the main event — the animated row. Replacing the gesture and layout.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 18 lines, removed 2 lines
+      44  
+      45  enum class DotStyle { Running, NeedsYou, Hollow, Failed }
+      46  
+      47 -/** Leftward drag distance that arms a row's delete. */        
+      48 -private val SWIPE_ARM_THRESHOLD = 72.dp                        
+      47 +/** Width of the delete action uncovered when a row is swiped f
+         +ully open. */                                                  
+      48 +private val DELETE_REVEAL_WIDTH = 88.dp                        
+      49  
+      50 +/**                                                            
+      51 + * Fling speed (px/s) that opens or closes a row regardless of 
+         +how far it was                                                 
+      52 + * dragged, so a quick flick doesn't require crossing the halfw
+         +ay point.                                                      
+      53 + */                                                            
+      54 +private const val SWIPE_FLING_VELOCITY = 400f                  
+      55 +                                                               
+      56 +/**                                                            
+      57 + * No bounce: the row is tracking a finger, and overshoot reads
+         + as sloppiness                                                 
+      58 + * rather than personality. Interruptible by construction — a n
+         +ew drag retargets                                              
+      59 + * the same Animatable mid-flight instead of queueing behind it
+         +.                                                              
+      60 + */                                                            
+      61 +private val swipeSpring = spring<Float>(                       
+      62 +    dampingRatio = Spring.DampingRatioNoBouncy,                
+      63 +    stiffness = Spring.StiffnessMediumLow,                     
+      64 +)                                                              
+      65 +                                                               
+      66  /** 9dp status dot (spec 06): running pulses; hollow = 1px fain
+          t ring. */
+      67  @Composable
+      68  fun StatusDot(style: DotStyle, modifier: Modifier = Modifier, d
+          escription: String = "") {
+
+⏺ Now the row itself — the drag, the offset, and the revealed action underneath.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 57 lines, removed 18 lines
+      125  /**
+      126   * Thread row (spec 06/2a): dot · title/preview/meta · pin. Ro
+           w tap opens; the
+      127   * pin glyph has its own ≥44dp hit area.
+      128 + *                                                            
+      129 + * Swiping left slides the row to uncover a delete button sitt
+          +ing beneath it.                                               
+      130 + * The row follows the finger 1:1 and settles open or closed o
+          +n release. While                                              
+      131 + * open, tapping the row body closes it rather than opening th
+          +e thread, so the                                              
+      132 + * destructive button is never adjacent to a tap that does som
+          +ething else.                                                  
+      133   */
+      134  @Composable
+      135  fun ThreadRow(
+     ...
+      145      onTogglePin: () -> Unit,
+      146      modifier: Modifier = Modifier,
+      147      sourceLabel: String? = null,
+      143 -    deleteArmed: Boolean = false,                             
+      148 +    deleteRevealed: Boolean = false,                          
+      149      deleteFailed: Boolean = false,
+      145 -    onSwipeToDelete: () -> Unit = {},                         
+      150 +    onRevealDelete: () -> Unit = {},                          
+      151 +    onHideDelete: () -> Unit = {},                            
+      152      onConfirmDelete: () -> Unit = {},
+      153  ) {
+      148 -    // Swipe left past a threshold arms the delete; the row it
+          -self never holds an                                           
+      149 -    // offset, so the list stays keyed and free of per-row ope
+          -n/closed state.                                               
+      150 -    val swipeThresholdPx = with(LocalDensity.current) { SWIPE_
+          -ARM_THRESHOLD.toPx() }                                        
+      151 -    Row(                                                      
+      152 -        verticalAlignment = Alignment.CenterVertically,       
+      154 +    val revealPx = with(LocalDensity.current) { DELETE_REVEAL_
+          +WIDTH.toPx() }                                                
+      155 +    val offsetX = remember { Animatable(0f) }                 
+      156 +    val scope = rememberCoroutineScope()                      
+      157 +                                                              
+      158 +    // Follows state driven from outside the row: another row 
+          +opening, or the                                               
+      159 +    // thread being deleted out from under an open row.       
+      160 +    LaunchedEffect(deleteRevealed, revealPx) {                
+      161 +        offsetX.animateTo(if (deleteRevealed) -revealPx else 0
+          +f, swipeSpring)                                               
+      162 +    }                                                         
+      163 +                                                              
+      164 +    Box(                                                      
+      165          modifier = modifier
+      166              .fillMaxWidth()
+      155 -            .hairline(HairlineSide.Bottom, LemanColors.hairlin
+          -eFaint)                                                       
+      156 -            .pointerInput(swipeThresholdPx) {                 
+      157 -                var dragged = 0f                              
+      158 -                detectHorizontalDragGestures(                 
+      159 -                    onDragStart = { dragged = 0f },           
+      160 -                    onDragEnd = { if (dragged <= -swipeThresho
+          -ldPx) onSwipeToDelete() },                                    
+      161 -                    onDragCancel = { dragged = 0f },          
+      162 -                ) { _, delta -> dragged += delta }            
+      163 -            }                                                 
+      164 -            .clickable(onClick = if (deleteArmed) onConfirmDel
+          -ete else onOpen)                                              
+      165 -            .padding(start = 18.dp, top = 13.dp, bottom = 13.d
+          -p),                                                           
+      167 +            // The divider belongs to the row's slot, not the 
+          +sliding surface.                                              
+      168 +            .hairline(HairlineSide.Bottom, LemanColors.hairlin
+          +eFaint),                                                      
+      169      ) {
+      170 +        DeleteAction(                                         
+      171 +            onClick = onConfirmDelete,                        
+      172 +            // Fades and scales in as the row uncovers it, so 
+          +the button reads as                                           
+      173 +            // physically behind the row rather than popping i
+          +n at the end.                                                 
+      174 +            progress = (-offsetX.value / revealPx).coerceIn(0f
+          +, 1f),                                                        
+      175 +            modifier = Modifier.align(Alignment.CenterEnd),   
+      176 +        )                                                     
+      177 +        Row(                                                  
+      178 +            verticalAlignment = Alignment.CenterVertically,   
+      179 +            modifier = Modifier                               
+      180 +                .fillMaxWidth()                               
+      181 +                .offset { IntOffset(offsetX.value.roundToInt()
+          +, 0) }                                                        
+      182 +                // Opaque: the action underneath must not show
+          + through the row.                                             
+      183 +                .background(LemanColors.base)                 
+      184 +                .draggable(                                   
+      185 +                    orientation = Orientation.Horizontal,     
+      186 +                    state = rememberDraggableState { delta -> 
+      187 +                        scope.launch {                        
+      188 +                            offsetX.snapTo((offsetX.value + de
+          +lta).coerceIn(-revealPx, 0f))                                 
+      189 +                        }                                     
+      190 +                    },                                        
+      191 +                    onDragStopped = { velocity ->             
+      192 +                        val open = velocity < -SWIPE_FLING_VEL
+          +OCITY ||                                                      
+      193 +                            (velocity <= SWIPE_FLING_VELOCITY 
+          +&& offsetX.value <= -revealPx / 2f)                           
+      194 +                        // Settle locally first: if `open` mat
+          +ches the current                                              
+      195 +                        // state the LaunchedEffect won't re-f
+          +ire, and the row                                              
+      196 +                        // would otherwise be stranded mid-dra
+          +g.                                                            
+      197 +                        launch { offsetX.animateTo(if (open) -
+          +revealPx else 0f, swipeSpring) }                              
+      198 +                        if (open != deleteRevealed) {         
+      199 +                            if (open) onRevealDelete() else on
+          +HideDelete()                                                  
+      200 +                        }                                     
+      201 +                    },                                        
+      202 +                )                                             
+      203 +                .clickable(onClick = if (deleteRevealed) onHid
+          +eDelete else onOpen)                                          
+      204 +                .padding(start = 18.dp, top = 13.dp, bottom = 
+          +13.dp),                                                       
+      205 +        ) {                                                   
+      206          StatusDot(dot, description = stateLabel)
+      207          Column(Modifier.weight(1f).padding(start = 12.dp)) {
+      208              Row(verticalAlignment = Alignment.CenterVertically
+           ) {
+
+⏺ Now the closing braces and the meta line — "tap to delete" is redundant now
+  that there's a real button.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 76 lines, removed 50 lines
+      203                  .clickable(onClick = if (deleteRevealed) onHid
+           eDelete else onOpen)
+      204                  .padding(start = 18.dp, top = 13.dp, bottom = 
+           13.dp),
+      205          ) {
+      206 -        StatusDot(dot, description = stateLabel)              
+      207 -        Column(Modifier.weight(1f).padding(start = 12.dp)) {  
+      208 -            Row(verticalAlignment = Alignment.CenterVertically
+          -) {                                                           
+      206 +            StatusDot(dot, description = stateLabel)          
+      207 +            Column(Modifier.weight(1f).padding(start = 12.dp))
+          + {                                                            
+      208 +                Row(verticalAlignment = Alignment.CenterVertic
+          +ally) {                                                       
+      209 +                    Text(                                     
+      210 +                        title,                                
+      211 +                        style = LemanType.value,              
+      212 +                        color = if (unread) LemanColors.textPr
+          +imary else LemanColors.textSecondary,                         
+      213 +                        maxLines = 1,                         
+      214 +                        overflow = TextOverflow.Ellipsis,     
+      215 +                        modifier = Modifier.weight(1f, fill = 
+          +false),                                                       
+      216 +                    )                                         
+      217 +                    if (unread) {                             
+      218 +                        Box(                                  
+      219 +                            Modifier                          
+      220 +                                .padding(start = 7.dp)        
+      221 +                                .size(5.dp)                   
+      222 +                                .background(LemanColors.accent
+          +),                                                            
+      223 +                        )                                     
+      224 +                    }                                         
+      225 +                }                                             
+      226                  Text(
+      210 -                    title,                                    
+      211 -                    style = LemanType.value,                  
+      212 -                    color = if (unread) LemanColors.textPrimar
+          -y else LemanColors.textSecondary,                             
+      227 +                    preview,                                  
+      228 +                    style = LemanType.meta.copy(fontSize = 11.
+          +sp),                                                          
+      229 +                    color = LemanColors.textTertiary,         
+      230                      maxLines = 1,
+      231                      overflow = TextOverflow.Ellipsis,
+      215 -                    modifier = Modifier.weight(1f, fill = fals
+          -e),                                                           
+      232 +                    modifier = Modifier.padding(top = 2.dp),  
+      233                  )
+      217 -                if (unread) {                                 
+      218 -                    Box(                                      
+      219 -                        Modifier                              
+      220 -                            .padding(start = 7.dp)            
+      221 -                            .size(5.dp)                       
+      222 -                            .background(LemanColors.accent),  
+      223 -                    )                                         
+      224 -                }                                             
+      225 -            }                                                 
+      226 -            Text(                                             
+      227 -                preview,                                      
+      228 -                style = LemanType.meta.copy(fontSize = 11.sp),
+      229 -                color = LemanColors.textTertiary,             
+      230 -                maxLines = 1,                                 
+      231 -                overflow = TextOverflow.Ellipsis,             
+      232 -                modifier = Modifier.padding(top = 2.dp),      
+      233 -            )                                                 
+      234 -            Row(modifier = Modifier.padding(top = 3.dp)) {    
+      235 -                when {                                        
+      236 -                    deleteArmed -> Text(                      
+      237 -                        "tap to delete",                      
+      238 -                        style = LemanType.meta,               
+      239 -                        color = LemanColors.danger,           
+      240 -                        modifier = Modifier.semantics { conten
+          -tDescription = "tap to delete" },                             
+      241 -                    )                                         
+      242 -                    deleteFailed -> Text(                     
+      243 -                        "delete failed · tap row to retry",   
+      244 -                        style = LemanType.meta,               
+      245 -                        color = LemanColors.danger,           
+      246 -                    )                                         
+      247 -                    else -> {                                 
+      234 +                Row(modifier = Modifier.padding(top = 3.dp)) {
+      235 +                    if (deleteFailed) {                       
+      236 +                        Text(                                 
+      237 +                            "delete failed · swipe to retry", 
+      238 +                            style = LemanType.meta,           
+      239 +                            color = LemanColors.danger,       
+      240 +                        )                                     
+      241 +                    } else {                                  
+      242                          if (sourceLabel != null) {
+      243                              Text("$sourceLabel · ", style = Le
+           manType.meta, color = LemanColors.textFaint)
+      244                          }
+     ...
+      248                      }
+      249                  }
+      250              }
+      251 +            Box(                                              
+      252 +                contentAlignment = Alignment.Center,          
+      253 +                modifier = Modifier                           
+      254 +                    .defaultMinSize(minWidth = 44.dp, minHeigh
+          +t = 44.dp)                                                    
+      255 +                    .clickable(onClick = onTogglePin)         
+      256 +                    .semantics { contentDescription = if (pinn
+          +ed) "unpin" else "pin" },                                     
+      257 +            ) {                                               
+      258 +                Text(                                         
+      259 +                    if (pinned) "◆" else "◇",                 
+      260 +                    style = LemanType.value,                  
+      261 +                    color = if (pinned) LemanColors.accent els
+          +e LemanColors.pinIdle,                                        
+      262 +                )                                             
+      263 +            }                                                 
+      264          }
+      258 -        Box(                                                  
+      259 -            contentAlignment = Alignment.Center,              
+      265 +    }                                                         
+      266 +}                                                             
+      267 +                                                              
+      268 +/**                                                           
+      269 + * The destructive action uncovered behind a swiped row. Fades
+          + and scales with                                              
+      270 + * the reveal so it reads as sitting underneath rather than ap
+          +pearing beside.                                               
+      271 + * Always laid out at full width so the tap target is stable o
+          +nce open; only its                                            
+      272 + * painting is driven by [progress].                          
+      273 + */                                                           
+      274 +@Composable                                                   
+      275 +private fun DeleteAction(                                     
+      276 +    onClick: () -> Unit,                                      
+      277 +    progress: Float,                                          
+      278 +    modifier: Modifier = Modifier,                            
+      279 +) {                                                           
+      280 +    Box(                                                      
+      281 +        contentAlignment = Alignment.Center,                  
+      282 +        modifier = modifier                                   
+      283 +            .width(DELETE_REVEAL_WIDTH)                       
+      284 +            .defaultMinSize(minHeight = 44.dp)                
+      285 +            .fillMaxHeight()                                  
+      286 +            .clickable(enabled = progress > 0.99f, onClick = o
+          +nClick)                                                       
+      287 +            .semantics { contentDescription = "delete thread" 
+          +},                                                            
+      288 +    ) {                                                       
+      289 +        Text(                                                 
+      290 +            "delete",                                         
+      291 +            style = LemanType.value,                          
+      292 +            color = LemanColors.danger,                       
+      293              modifier = Modifier
+      261 -                .defaultMinSize(minWidth = 44.dp, minHeight = 
+          -44.dp)                                                        
+      262 -                .clickable(onClick = onTogglePin)             
+      263 -                .semantics { contentDescription = if (pinned) 
+          -"unpin" else "pin" },                                         
+      264 -        ) {                                                   
+      265 -            Text(                                             
+      266 -                if (pinned) "◆" else "◇",                     
+      267 -                style = LemanType.value,                      
+      268 -                color = if (pinned) LemanColors.accent else Le
+          -manColors.pinIdle,                                            
+      269 -            )                                                 
+      270 -        }                                                     
+      294 +                .alpha(progress)                              
+      295 +                .scale(0.8f + progress * 0.2f),               
+      296 +        )                                                     
+      297      }
+      298  }
+      299  
+
+⏺ Now the imports.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 9 lines, removed 1 line
+       1  package net.liquidx.leman.ui.components
+       2  
+       3 +import androidx.compose.animation.core.Animatable              
+       4  import androidx.compose.animation.core.RepeatMode
+       5 +import androidx.compose.animation.core.Spring                  
+       6  import androidx.compose.animation.core.animateFloat
+       7  import androidx.compose.animation.core.infiniteRepeatable
+       8  import androidx.compose.animation.core.rememberInfiniteTransiti
+          on
+       9 +import androidx.compose.animation.core.spring                  
+      10  import androidx.compose.animation.core.tween
+      11  import androidx.compose.foundation.background
+      12  import androidx.compose.foundation.clickable
+      10 -import androidx.compose.foundation.gestures.detectHorizontalDra
+         -gGestures                                                      
+      13 +import androidx.compose.foundation.gestures.Orientation        
+      14 +import androidx.compose.foundation.gestures.draggable          
+      15 +import androidx.compose.foundation.gestures.rememberDraggableSt
+         +ate                                                            
+      16  import androidx.compose.foundation.layout.Box
+      17  import androidx.compose.foundation.layout.Column
+      18  import androidx.compose.foundation.layout.Row
+      19 +import androidx.compose.foundation.layout.fillMaxHeight        
+      20  import androidx.compose.foundation.layout.fillMaxWidth
+      21 +import androidx.compose.foundation.layout.offset               
+      22  import androidx.compose.foundation.layout.padding
+      23  import androidx.compose.foundation.layout.size
+      24 +import androidx.compose.foundation.layout.width                
+      25  import androidx.compose.foundation.shape.CircleShape
+      26  import androidx.compose.material3.Text
+      27  import androidx.compose.runtime.Composable
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 3 lines
+      25  import androidx.compose.foundation.shape.CircleShape
+      26  import androidx.compose.material3.Text
+      27  import androidx.compose.runtime.Composable
+      28 +import androidx.compose.runtime.LaunchedEffect                 
+      29  import androidx.compose.runtime.getValue
+      30 +import androidx.compose.runtime.remember                       
+      31 +import androidx.compose.runtime.rememberCoroutineScope         
+      32  import androidx.compose.ui.Alignment
+      33  import androidx.compose.ui.Modifier
+      34  import androidx.compose.ui.draw.clip
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 3 lines, removed 1 line
+      35  import androidx.compose.ui.draw.scale
+      36  import androidx.compose.ui.graphics.Color
+      37  import androidx.compose.ui.graphics.drawscope.Stroke
+      38 -import androidx.compose.ui.input.pointer.pointerInput          
+      38  import androidx.compose.ui.platform.LocalDensity
+      39 +import androidx.compose.ui.unit.IntOffset                      
+      40 +import kotlin.math.roundToInt                                  
+      41 +import kotlinx.coroutines.launch                               
+      42  import androidx.compose.ui.draw.alpha
+      43  import androidx.compose.ui.draw.drawBehind
+      44  import androidx.compose.ui.semantics.contentDescription
+
+⏺ Now updating the screen wiring and the preview.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/threads/ThreadsScreen.kt)
+  ⎿  Added 3 lines, removed 2 lines
+      127                          onOpen = { onOpenThread(item.id) },
+      128                          onTogglePin = { onEvent(ThreadsEvent.T
+           ogglePin(item.id)) },
+      129                          sourceLabel = item.sourceLabel,
+      130 -                        deleteArmed = state.armedDeleteId == i
+          -tem.id,                                                       
+      130 +                        deleteRevealed = state.revealedDeleteI
+          +d == item.id,                                                 
+      131                          deleteFailed = state.deleteErrorId == 
+           item.id,
+      132 -                        onSwipeToDelete = { onEvent(ThreadsEve
+          -nt.ArmDelete(item.id)) },                                     
+      132 +                        onRevealDelete = { onEvent(ThreadsEven
+          +t.RevealDelete(item.id)) },                                   
+      133 +                        onHideDelete = { onEvent(ThreadsEvent.
+          +HideDelete) },                                                
+      134                          onConfirmDelete = { onEvent(ThreadsEve
+           nt.ConfirmDelete(item.id)) },
+      135                      )
+      136                  }
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Compiles. Now adding a preview for the revealed state, then running tests.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 26 lines
+      350              onOpen = {},
+      351              onTogglePin = {},
+      352          )
+      353 +        ThreadRow(                                            
+      354 +            title = "swiped open",                            
+      355 +            preview = "delete button uncovered behind the row"
+          +,                                                             
+      356 +            stateLabel = "done",                              
+      357 +            stateColor = LemanColors.textFaint,               
+      358 +            timeLabel = "18:02",                              
+      359 +            dot = DotStyle.Hollow,                            
+      360 +            unread = false,                                   
+      361 +            pinned = false,                                   
+      362 +            onOpen = {},                                      
+      363 +            onTogglePin = {},                                 
+      364 +            deleteRevealed = true,                            
+      365 +        )                                                     
+      366 +        ThreadRow(                                            
+      367 +            title = "delete that failed",                     
+      368 +            preview = "server said no",                       
+      369 +            stateLabel = "done",                              
+      370 +            stateColor = LemanColors.textFaint,               
+      371 +            timeLabel = "17:30",                              
+      372 +            dot = DotStyle.Hollow,                            
+      373 +            unread = false,                                   
+      374 +            pinned = false,                                   
+      375 +            onOpen = {},                                      
+      376 +            onTogglePin = {},                                 
+      377 +            deleteFailed = true,                              
+      378 +        )                                                     
+      379      }
+      380  }
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ google-services.json is gitignored too — copying it over like
+  local.properties.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+⏺ 227 tests pass. But the gesture itself is still the untested part — and now it
+  is the feature. Let me check whether I can drive a real swipe under
+  Robolectric.
+
+  Listed 1 directory (ctrl+o to expand)
+
+⏺ compose.ui.test.junit4 is on the unit-test classpath, so I can drive real
+  gestures under Robolectric. Let me match the existing setup.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Now writing gesture tests that actually swipe — this is the part that was
+  untested last time.
+
+⏺ Write(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/l
+       eman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Wrote 155 lines to .claude/worktrees/swipe-reveal-animation/app/src/te
+     st/java/net/liquidx/leman/ui/components/ThreadRowSwipeTest.kt
+       1 package net.liquidx.leman.ui.components
+       2 
+       3 import androidx.compose.foundation.layout.Column
+       4 import androidx.compose.foundation.layout.fillMaxSize
+       5 import androidx.compose.foundation.lazy.LazyColumn
+       6 import androidx.compose.foundation.lazy.rememberLazyListState
+       7 import androidx.compose.runtime.getValue
+       8 import androidx.compose.runtime.mutableStateOf
+       9 import androidx.compose.runtime.setValue
+      10 import androidx.compose.ui.Modifier
+     … +169 lines (ctrl+o to expand)
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Missing imports and a @Composable-returning-lambda pattern that doesn't work.
+  Fixing both.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 4 lines
+       3  import androidx.compose.foundation.layout.Column
+       4  import androidx.compose.foundation.layout.fillMaxSize
+       5  import androidx.compose.foundation.lazy.LazyColumn
+       6 +import androidx.compose.foundation.lazy.items                  
+       7  import androidx.compose.foundation.lazy.rememberLazyListState
+       8 +import androidx.compose.runtime.Composable                     
+       9  import androidx.compose.runtime.getValue
+      10  import androidx.compose.runtime.mutableStateOf
+      11 +import androidx.compose.runtime.remember                       
+      12  import androidx.compose.runtime.setValue
+      13  import androidx.compose.ui.Modifier
+      14  import androidx.compose.ui.test.hasContentDescription
+      15  import androidx.compose.ui.test.junit4.createComposeRule
+      16  import androidx.compose.ui.test.onNodeWithText
+      17 +import androidx.compose.ui.test.performClick                   
+      18  import androidx.compose.ui.test.performTouchInput
+      19  import androidx.compose.ui.test.swipeLeft
+      20  import androidx.compose.ui.test.swipeRight
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 3 lines, removed 2 lines
+      40      @get:Rule
+      41      val compose = createComposeRule()
+      42  
+      43 -    private fun row(                                           
+      43 +    @Composable                                                
+      44 +    private fun Row(                                           
+      45          title: String = "swipe me",
+      46          revealed: Boolean = false,
+      47          onOpen: () -> Unit = {},
+      48          onReveal: () -> Unit = {},
+      49          onHide: () -> Unit = {},
+      50          onConfirm: () -> Unit = {},
+      50 -    ) = @Composable {                                          
+      51 +    ) {                                                        
+      52          ThreadRow(
+      53              title = title,
+      54              preview = "preview",
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ A few fixes: unused imports, and the scroll test would break once row 0
+  scrolls off screen.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Removed 2 lines
+      1  package net.liquidx.leman.ui.components
+      2  
+      3 -import androidx.compose.foundation.layout.Column                
+      3  import androidx.compose.foundation.layout.fillMaxSize
+      4  import androidx.compose.foundation.lazy.LazyColumn
+      6 -import androidx.compose.foundation.lazy.items                   
+      5  import androidx.compose.foundation.lazy.rememberLazyListState
+      6  import androidx.compose.runtime.Composable
+      7  import androidx.compose.runtime.getValue
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 3 lines, removed 1 line
+      149                  }
+      150              }
+      151          }
+      152 +        // Swipe at the root, not a named row: rows scroll out
+          + from under the                                               
+      153 +        // finger, and re-querying a specific one would fail b
+          +efore the assert.                                             
+      154          repeat(3) {
+      153 -            compose.onNodeWithText("row 0").performTouchInput 
+          -{ swipeUp() }                                                 
+      155 +            compose.onRoot().performTouchInput { swipeUp() }  
+      156              compose.waitForIdle()
+      157          }
+      158          assertEquals("scrolling the list must never reveal a d
+           elete", 0, revealCount)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Compiles. Running the gesture tests — this is the real verification.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ All 7 pass, including the vertical-scroll safety test. But a passing test
+  proves nothing if it would also pass when the feature is broken — let me
+  mutation-check the two that matter most.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ All three mutations killed — the tests have real teeth, not just green
+  checkmarks. Running the full suite on the restored file.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ 234 tests, 0 failures. The Roborazzi screenshots only verify when explicitly
+  flagged, so let me check the layout change didn't shift pixels.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Three threads screenshots changed — my layout change did shift pixels. Let me
+  look before assuming it's benign.
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+⏺ Content is identical; the diff is thin red lines exactly at the row dividers.
+  Let me find out precisely what moved rather than guessing.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Found a real regression — and the screenshot test caught it. hairline uses
+  drawBehind, so when I moved it to the outer Box, the row's new opaque
+  background paints over the divider. The dividers were disappearing.
+
+  Let me fix it properly by adding a paint-over variant to the design system
+  rather than duplicating the line math.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/theme/Modifiers.kt)
+  ⎿  Added 17 lines, removed 1 line
+      27  fun Modifier.hairline(
+      28      side: HairlineSide,
+      29      color: Color = LemanColors.hairline,
+      30 -): Modifier = drawBehind {                                     
+      30 +): Modifier = drawBehind { drawHairline(side, color) }         
+      31 +                                                               
+      32 +/**                                                            
+      33 + * [hairline], but painted *over* the content instead of behind
+         + it. Needed when a                                             
+      34 + * child draws an opaque background that would otherwise cover 
+         +the line — e.g. a                                              
+      35 + * row that slides horizontally to uncover an action beneath it
+         +, where the                                                    
+      36 + * divider belongs to the stationary slot rather than the slidi
+         +ng surface.                                                    
+      37 + */                                                            
+      38 +fun Modifier.hairlineOver(                                     
+      39 +    side: HairlineSide,                                        
+      40 +    color: Color = LemanColors.hairline,                       
+      41 +): Modifier = drawWithContent {                                
+      42 +    drawContent()                                              
+      43 +    drawHairline(side, color)                                  
+      44 +}                                                              
+      45 +                                                               
+      46 +private fun DrawScope.drawHairline(side: HairlineSide, color: C
+         +olor) {                                                        
+      47      val w = size.width
+      48      val h = size.height
+      49      when (side) {
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Now re-verifying the screenshots.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Screenshots now pixel-identical — dividers restored, closed state unchanged.
+  Since I've never actually seen the revealed state, let me add it as a
+  screenshot golden and look at it.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 13 lines
+      72          )
+      73      }
+      74  
+      75 +    /** A row swiped open, uncovering its delete action. */    
+      76      @Test
+      77 +    fun threads_deleteRevealed() = snap("2a-threads-delete-reve
+         +aled") {                                                       
+      78 +        val full = ScreenshotFixtures.threadsState()           
+      79 +        ThreadsScreen(                                         
+      80 +            state = full.copy(                                 
+      81 +                revealedDeleteId = full.sections.first().items.
+         +first().id,                                                    
+      82 +            ),                                                 
+      83 +            clock = "09:41", tabs = tabs, onEvent = {},        
+      84 +            onOpenThread = {}, onNewThread = {}, onOpenConfig =
+         + {},                                                           
+      85 +        )                                                      
+      86 +    }                                                          
+      87 +                                                               
+      88 +    @Test                                                      
+      89      fun threads_filtered() = snap("2a-threads-filtered") {
+      90          val full = ScreenshotFixtures.threadsState()
+      91          ThreadsScreen(
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Now let me actually look at what I built.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Two things wrong. The row slid only ~22dp, not 88dp, and the delete label is
+  nearly invisible — the screenshot caught the spring mid-flight, so it's a
+  non-deterministic golden. Let me look at the capture helper.
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ snap deliberately advances only 64ms (to freeze the pulse dot at a fixed
+  phase), so my spring was caught barely started. Two fixes: let the shot
+  settle, and make the spring snappier — a ~600ms settle after releasing a
+  finger is sluggish for a row action.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 8 lines, removed 2 lines
+      50  
+      51      private val tabs = listOf(ThreadsTab, ConfigTab)
+      52  
+      53 -    private fun snap(name: String, content: @Composable () -> U
+         -nit) {                                                         
+      53 +    /**                                                        
+      54 +     * [settleMillis] defaults to one frame so looping animatio
+         +ns (the running                                                
+      55 +     * dot's pulse) are always captured at the same phase. Shot
+         +s of a settled                                                 
+      56 +     * transition pass a longer value so the spring has finishe
+         +d; capturing it                                                
+      57 +     * mid-flight would make the golden depend on animation tim
+         +ing.                                                           
+      58 +     */                                                        
+      59 +    private fun snap(name: String, settleMillis: Long = 64, con
+         +tent: @Composable () -> Unit) {                                
+      60          compose.mainClock.autoAdvance = false
+      61          compose.setContent {
+      62              LemanTheme {
+      63                  Box(Modifier.size(380.dp, 788.dp).lemanScreenBa
+          ckground()) { content() }
+      64              }
+      65          }
+      60 -        compose.mainClock.advanceTimeBy(64)                    
+      66 +        compose.mainClock.advanceTimeBy(settleMillis)          
+      67          compose.onRoot().captureRoboImage("src/test/screenshots
+          /$name.png")
+      68      }
+      69  
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/screenshot/ScreenshotTests.kt)
+  ⎿  Added 1 line, removed 1 line
+      80  
+      81      /** A row swiped open, uncovering its delete action. */
+      82      @Test
+      83 -    fun threads_deleteRevealed() = snap("2a-threads-delete-reve
+         -aled") {                                                       
+      83 +    fun threads_deleteRevealed() = snap("2a-threads-delete-reve
+         +aled", settleMillis = 1_000) {                                 
+      84          val full = ScreenshotFixtures.threadsState()
+      85          ThreadsScreen(
+      86              state = full.copy(
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 1 line, removed 1 line
+      73   */
+      74  private val swipeSpring = spring<Float>(
+      75      dampingRatio = Spring.DampingRatioNoBouncy,
+      76 -    stiffness = Spring.StiffnessMediumLow,                     
+      76 +    stiffness = Spring.StiffnessMedium,                        
+      77  )
+      78  
+      79  /** 9dp status dot (spec 06): running pulses; hollow = 1px fain
+          t ring. */
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Now it's correct: the row has slid fully left, delete sits in red in the
+  revealed 88dp, and the divider is intact. The title clipping at the left edge
+  is standard swipe-to-reveal behaviour (iOS Mail does the same).
+
+  Let me confirm nothing else shifted and the whole suite is green.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ 235 tests green including screenshot verification. One layout detail I want to
+  correct before shipping: fillMaxHeight() is silently a no-op inside a
+  LazyColumn (infinite height constraints), which would leave dead strips above
+  and below the button. Let me verify my reading and fix it.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 4 lines, removed 1 line
+      185              // Fades and scales in as the row uncovers it, so 
+           the button reads as
+      186              // physically behind the row rather than popping i
+           n at the end.
+      187              progress = (-offsetX.value / revealPx).coerceIn(0f
+           , 1f),
+      188 -            modifier = Modifier.align(Alignment.CenterEnd),   
+      188 +            // matchParentSize, not fillMaxHeight: inside a La
+          +zyColumn the height                                           
+      189 +            // constraint is infinite, so fillMaxHeight silent
+          +ly does nothing and                                           
+      190 +            // would leave untappable strips above and below t
+          +he button.                                                    
+      191 +            modifier = Modifier.matchParentSize(),            
+      192          )
+      193          Row(
+      194              verticalAlignment = Alignment.CenterVertically,
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 20 lines, removed 16 lines
+      293      progress: Float,
+      294      modifier: Modifier = Modifier,
+      295  ) {
+      296 -    Box(                                                      
+      297 -        contentAlignment = Alignment.Center,                  
+      298 -        modifier = modifier                                   
+      299 -            .width(DELETE_REVEAL_WIDTH)                       
+      300 -            .defaultMinSize(minHeight = 44.dp)                
+      301 -            .fillMaxHeight()                                  
+      302 -            .clickable(enabled = progress > 0.99f, onClick = o
+          -nClick)                                                       
+      303 -            .semantics { contentDescription = "delete thread" 
+          -},                                                            
+      304 -    ) {                                                       
+      305 -        Text(                                                 
+      306 -            "delete",                                         
+      307 -            style = LemanType.value,                          
+      308 -            color = LemanColors.danger,                       
+      296 +    Box(modifier = modifier, contentAlignment = Alignment.Cent
+          +erEnd) {                                                      
+      297 +        Box(                                                  
+      298 +            contentAlignment = Alignment.Center,              
+      299              modifier = Modifier
+      310 -                .alpha(progress)                              
+      311 -                .scale(0.8f + progress * 0.2f),               
+      312 -        )                                                     
+      300 +                .width(DELETE_REVEAL_WIDTH)                   
+      301 +                .fillMaxHeight()                              
+      302 +                .defaultMinSize(minHeight = 44.dp)            
+      303 +                // Only tappable once fully uncovered, so a ha
+          +lf-open row can't                                             
+      304 +                // be deleted by a tap the user meant for the 
+          +row itself.                                                   
+      305 +                .clickable(enabled = progress > 0.99f, onClick
+          + = onClick)                                                   
+      306 +                .semantics { contentDescription = "delete thre
+          +ad" },                                                        
+      307 +        ) {                                                   
+      308 +            Text(                                             
+      309 +                "delete",                                     
+      310 +                style = LemanType.value,                      
+      311 +                color = LemanColors.danger,                   
+      312 +                modifier = Modifier                           
+      313 +                    .alpha(progress)                          
+      314 +                    .scale(0.8f + progress * 0.2f),           
+      315 +            )                                                 
+      316 +        }                                                     
+      317      }
+      318  }
+      319  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Green — the hit-area fix didn't move any pixels, it just enlarged the target.
+  Let me lock that in with a test so it can't silently regress.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 24 lines
+      135      }
+      136  
+      137      /**
+      138 +     * Guards the reason DeleteAction uses matchParentSize rat
+          +her than                                                      
+      139 +     * fillMaxHeight: inside a LazyColumn the height constrain
+          +t is infinite, so                                             
+      140 +     * fillMaxHeight is a no-op and leaves dead strips above a
+          +nd below the button.                                          
+      141 +     */                                                       
+      142 +    @Test                                                     
+      143 +    fun revealedDeleteButton_fillsFullRowHeight() {           
+      144 +        compose.setContent {                                  
+      145 +            LazyColumn(modifier = Modifier.fillMaxSize()) {   
+      146 +                items(3) { Row(title = "row $it", revealed = i
+          +t == 0) }                                                     
+      147 +            }                                                 
+      148 +        }                                                     
+      149 +        compose.waitForIdle()                                 
+      150 +        val rowHeight = compose.onNodeWithText("row 0").getUnc
+          +lippedBoundsInRoot().height                                   
+      151 +        val buttonHeight = compose.onNode(hasContentDescriptio
+          +n("delete thread"))                                           
+      152 +            .getUnclippedBoundsInRoot().height                
+      153 +        assertEquals(                                         
+      154 +            "the delete target should span the whole row, leav
+          +ing no dead strips",                                          
+      155 +            rowHeight.value,                                  
+      156 +            buttonHeight.value,                               
+      157 +            0.5f,                                             
+      158 +        )                                                     
+      159 +    }                                                         
+      160 +                                                              
+      161 +    /**                                                       
+      162       * The failure that would matter most in the hand: if hori
+           zontal drag
+      163       * detection didn't yield to the list's vertical scroll, a
+           n ordinary flick
+      164       * through the list would arm a destructive action under t
+           he user's thumb.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ DpRect.height needs the androidx.compose.ui.unit import.
+
+  Searched for 1 pattern, ran 2 shell commands (ctrl+o to expand)
+
+⏺ The failure is informative on two counts. My test selector was ambiguous — but
+  the bounds show t=0, b=167px (the full row), so matchParentSize works. More
+  importantly, it revealed every row exposes a "delete thread" node to 
+  accessibility even when closed, non-actionable. Let me fix that properly.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 13 lines, removed 4 lines
+      293      progress: Float,
+      294      modifier: Modifier = Modifier,
+      295  ) {
+      296 +    // Only tappable once fully uncovered, so a half-open row 
+          +can't be deleted by                                           
+      297 +    // a tap the user meant for the row itself. Below that the
+          + node is dropped                                              
+      298 +    // from the semantics tree entirely — otherwise every clos
+          +ed row would offer                                            
+      299 +    // a screen reader a "delete thread" target it cannot acti
+          +vate.                                                         
+      300 +    val active = progress > 0.99f                             
+      301      Box(modifier = modifier, contentAlignment = Alignment.Cent
+           erEnd) {
+      302          Box(
+      303              contentAlignment = Alignment.Center,
+     ...
+      305                  .width(DELETE_REVEAL_WIDTH)
+      306                  .fillMaxHeight()
+      307                  .defaultMinSize(minHeight = 44.dp)
+      303 -                // Only tappable once fully uncovered, so a ha
+          -lf-open row can't                                             
+      304 -                // be deleted by a tap the user meant for the 
+          -row itself.                                                   
+      305 -                .clickable(enabled = progress > 0.99f, onClick
+          - = onClick)                                                   
+      306 -                .semantics { contentDescription = "delete thre
+          -ad" },                                                        
+      308 +                .clickable(enabled = active, onClick = onClick
+          +)                                                             
+      309 +                .then(                                        
+      310 +                    if (active) {                             
+      311 +                        Modifier.semantics { contentDescriptio
+          +n = "delete thread" }                                         
+      312 +                    } else {                                  
+      313 +                        Modifier.clearAndSetSemantics {}      
+      314 +                    },                                        
+      315 +                ),                                            
+      316          ) {
+      317              Text(
+      318                  "delete",
+
+⏺ Now the accessible path to delete — a drag gesture is unreachable for
+  screen-reader users, so the row needs a custom action.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/main/java/net/liquidx/
+        leman/ui/components/ThreadList.kt)
+  ⎿  Added 9 lines, removed 1 line
+      178          modifier = modifier
+      179              .fillMaxWidth()
+      180              // The divider belongs to the row's slot, not the 
+           sliding surface.
+      181 -            .hairlineOver(HairlineSide.Bottom, LemanColors.hai
+          -rlineFaint),                                                  
+      181 +            .hairlineOver(HairlineSide.Bottom, LemanColors.hai
+          +rlineFaint)                                                   
+      182 +            // A drag is unreachable with a screen reader, so 
+          +expose delete as a                                            
+      183 +            // custom action too. It confirms directly: the sw
+          +ipe-then-tap                                                  
+      184 +            // sequence exists to prevent slips, which isn't h
+          +ow this is invoked.                                           
+      185 +            .semantics {                                      
+      186 +                customActions = listOf(                       
+      187 +                    CustomAccessibilityAction("delete thread")
+          + { onConfirmDelete(); true },                                 
+      188 +                )                                             
+      189 +            },                                                
+      190      ) {
+      191          DeleteAction(
+      192              onClick = onConfirmDelete,
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Now fixing my ambiguous test selector — with closed rows no longer in the
+  semantics tree, the query becomes unambiguous.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 20 lines, removed 8 lines
+      149              }
+      150          }
+      151          compose.waitForIdle()
+      152 -        val rowHeight = compose.onNodeWithText("row 0").getUnc
+          -lippedBoundsInRoot().height                                   
+      153 -        val buttonHeight = compose.onNode(hasContentDescriptio
+          -n("delete thread"))                                           
+      154 -            .getUnclippedBoundsInRoot().height                
+      155 -        assertEquals(                                         
+      156 -            "the delete target should span the whole row, leav
+          -ing no dead strips",                                          
+      157 -            rowHeight.value,                                  
+      158 -            buttonHeight.value,                               
+      159 -            0.5f,                                             
+      152 +        // Only the revealed row contributes a delete node; cl
+          +osed rows drop                                                
+      153 +        // theirs from the semantics tree, so this query is un
+          +ambiguous.                                                    
+      154 +        val button = compose.onNode(hasContentDescription("del
+          +ete thread"))                                                 
+      155 +            .getUnclippedBoundsInRoot()                       
+      156 +        // Rows are ~67dp tall here; a button clamped to its 4
+          +4dp minimum would                                             
+      157 +        // leave dead strips top and bottom.                  
+      158 +        assertTrue(                                           
+      159 +            "the delete target should span the whole row, not 
+          +just its 44dp minimum",                                       
+      160 +            button.height.value > 60f,                        
+      161          )
+      162      }
+      163  
+      164 +    @Test                                                     
+      165 +    fun closedRows_exposeNoDeleteTargetToAccessibility() {    
+      166 +        compose.setContent {                                  
+      167 +            LazyColumn(modifier = Modifier.fillMaxSize()) {   
+      168 +                items(3) { Row(title = "row $it", revealed = f
+          +alse) }                                                       
+      169 +            }                                                 
+      170 +        }                                                     
+      171 +        compose.waitForIdle()                                 
+      172 +        compose.onAllNodes(hasContentDescription("delete threa
+          +d")).assertCountEquals(0)                                     
+      173 +    }                                                         
+      174 +                                                              
+      175      /**
+      176       * The failure that would matter most in the hand: if hori
+           zontal drag
+      177       * detection didn't yield to the list's vertical scroll, a
+           n ordinary flick
+
+⏺ The closed-row click test now needs updating — the node no longer exists at
+  all, which is a stronger guarantee.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 19 lines, removed 2 lines
+      106  
+      107      @Test
+      108      fun deleteButton_isNotTappableWhileRowIsClosed() {
+      109 +        compose.setContent { Row(revealed = false) }          
+      110 +        compose.waitForIdle()                                 
+      111 +        // Not merely disabled — absent, so no tap can reach i
+          +t and no screen                                               
+      112 +        // reader can land on a target it could not activate. 
+      113 +        compose.onNode(hasContentDescription("delete thread"))
+          +.assertDoesNotExist()                                         
+      114 +    }                                                         
+      115 +                                                              
+      116 +    /** The only delete path reachable without performing a dr
+          +ag. */                                                        
+      117 +    @Test                                                     
+      118 +    fun rowExposesDeleteAsAnAccessibilityAction() {           
+      119          var confirmed = 0
+      120          compose.setContent { Row(revealed = false, onConfirm =
+            { confirmed++ }) }
+      111 -        compose.onNode(hasContentDescription("delete thread"))
+          -.performClick()                                               
+      121          compose.waitForIdle()
+      113 -        assertEquals("a hidden delete must not be clickable th
+          -rough the row", 0, confirmed)                                 
+      122 +        val actions = compose.onNodeWithText("swipe me")      
+      123 +            .fetchSemanticsNode()                             
+      124 +            .config                                           
+      125 +            .getOrNull(SemanticsActions.CustomActions)        
+      126 +            .orEmpty()                                        
+      127 +        val delete = actions.firstOrNull { it.label == "delete
+          + thread" }                                                    
+      128 +        assertTrue("the row should expose a delete custom acti
+          +on", delete != null)                                          
+      129 +        delete!!.action?.invoke()                             
+      130 +        assertEquals(1, confirmed)                            
+      131      }
+      132  
+      133      @Test
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ assertDoesNotExist and onAllNodes are member functions, not extensions —
+  removing those two imports.
+
+  Ran 2 shell commands (ctrl+o to expand)
+⏺ The custom action lives on the outer Box, while onNodeWithText resolves to the
+  text's merged node. Let me search the tree instead of guessing at the node.
+
+⏺ Update(.claude/worktrees/swipe-reveal-animation/app/src/test/java/net/liquidx/
+        leman/ui/components/ThreadRowSwipeTest.kt)
+  ⎿  Added 9 lines, removed 7 lines
+      122          var confirmed = 0
+      123          compose.setContent { Row(revealed = false, onConfirm =
+            { confirmed++ }) }
+      124          compose.waitForIdle()
+      125 -        val actions = compose.onNodeWithText("swipe me")      
+      126 -            .fetchSemanticsNode()                             
+      127 -            .config                                           
+      128 -            .getOrNull(SemanticsActions.CustomActions)        
+      129 -            .orEmpty()                                        
+      130 -        val delete = actions.firstOrNull { it.label == "delete
+          - thread" }                                                    
+      125 +        // The action sits on the row's outer slot, which is n
+          +ot the node that                                              
+      126 +        // onNodeWithText resolves to, so walk the tree for it
+          +.                                                             
+      127 +        fun customActionsIn(node: SemanticsNode): List<CustomA
+          +ccessibilityAction> =                                         
+      128 +            node.config.getOrNull(SemanticsActions.CustomActio
+          +ns).orEmpty() +                                               
+      129 +                node.children.flatMap { customActionsIn(it) } 
+      130 +                                                              
+      131 +        val delete = customActionsIn(compose.onRoot().fetchSem
+          +anticsNode())                                                 
+      132 +            .firstOrNull { it.label == "delete thread" }      
+      133          assertTrue("the row should expose a delete custom acti
+           on", delete != null)
+      134          delete!!.action?.invoke()
+      133 -        assertEquals(1, confirmed)                            
+      135 +        assertEquals("the custom action should delete directly
+          +", 1, confirmed)                                              
+      136      }
+      137  
+      138      @Test
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ All 10 gesture tests pass. Final full run with screenshot verification.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Committing and opening the PR.
+
+  Pushed to worktree-swipe-reveal-animation, created PR #3, ran 1 shell command (ctrl+o to expand)
+
+⏺ Draft PR: https://github.com/liquidx/liquidx-leman-android/pull/3
+
+  What I built: the row now translates 1:1 under your finger, uncovering an 88dp
+  delete button beneath it, settling open or closed on release (or on a fling,
+  so a quick flick works). I dropped the 3s auto-disarm — it was defensible for
+  an ephemeral text label, but a visible button that retracts while you're
+  reaching for it is hostile. An open row now closes only on an explicit act.
+
+  What I verified: 238 tests, 0 failures, assembleDebug clean. The gap from last
+  time is closed — 10 Compose tests drive real swipes under Robolectric,
+  including the vertical-scroll case I'd flagged as the scariest failure mode. I
+  mutation-checked the three safety tests by breaking the reveal, the
+  disabled-tap guard, and the tap-to-close; each one fails the suite, so they're
+  not vacuous.
+
+  Three bugs I found while verifying — worth reading, because two were 
+  invisible:
+
+  1. Row dividers disappeared. hairline draws via drawBehind, so moving it to
+     the outer slot put it behind the sliding row's new opaque background.
+     Caught only by the existing Roborazzi goldens — a diff review would have
+     missed it entirely. Added a hairlineOver variant.
+  2. fillMaxHeight on the delete button is silently a no-op inside a LazyColumn
+     (infinite height constraints), leaving untappable strips above and below
+     it. Switched to matchParentSize.
+  3. Every row exposed a non-actionable "delete thread" node to screen readers.
+     Found because a test selector came back ambiguous — the failure was more
+     informative than the test I meant to write. Closed rows now clear it, and
+     the row carries a custom accessibility action so delete is reachable
+     without a drag at all.
+
+  I also caught my own first screenshot golden capturing the spring mid-flight,
+  which would have made it timing-dependent; snap() grew a settleMillis for
+  that.
+
+  What I still can't tell you: how it feels. I raised the spring stiffness from
+  MediumLow to Medium (~600ms → ~200ms settle) reasoning that a row tracking a
+  finger should snap rather than glide — but that's a judgment made from a
+  static PNG. Same for whether 88dp is a comfortable reveal and whether the
+  title clipping off the left edge reads right at this type size. That needs a
+  device, and it's the one thing I'd check before undrafting.
+
+  result: Swipe-to-delete now animates the row to reveal a delete button — draft
+  PR #3, 238 tests passing, 3 bugs found and fixed during verification (divider
+  regression, dead hit-area strips, phantom a11y targets); spring feel still
+  needs an on-device pass.
+
+✻ Crunched for 17m 37s · done Sunday, Jul 19 at 4:40 PM
+
+※ recap: You asked for swipe-to-delete on sessions; the animated swipe-to-reveal version is now in draft PR #3 with 238 tests passing. Next: try it on a device to check the animation feel, then merge. (disable recaps in /config)
+
+❯ Build and install on to my device for me to check                             
+
+⏺ Checking what's connected before building.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ One device connected over wireless ADB (A059, at 100.125.10.111). Building and
+  installing from this worktree, so you'll get the new swipe-reveal version.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Installed. Launching it so it's ready on screen.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Built and installed on your device (A059), and the app is launched on the
+  threads screen.
+
+  What to try, and the specific things I couldn't judge from a screenshot:
+
+  - Swipe a row left. It should track your finger 1:1 and snap open to reveal
+    delete. The main question is the settle speed — I raised the spring
+    stiffness to ~200ms on the theory that a row following a finger should snap
+    rather than glide. If it feels abrupt, MediumLow (~600ms) is the other end;
+    there's room in between.
+  - Flick it quickly and let go early. Anything past 400px/s should open without
+    crossing halfway.
+  - Scroll the list normally, fast. This is the one I most want confirmed. A row
+    arming during an ordinary flick would put an irreversible delete under your
+    thumb. It's covered by a test, but tests use synthetic gestures — real
+    fingers arrive at angles.
+  - With a row open: tapping the body should close it (not open the thread), and
+    swiping another row should close the first.
+  - 88dp reveal width and the title clipping off the left edge — standard
+    iOS-Mail behaviour, but worth seeing at this type size.
+
+  Two notes: this is the branch from PR #3, not main — main still has the older
+  arm-on-swipe version, so if you want to compare, say the word and I'll build
+  that too. And the delete is a real server-side delete with no undo, so use a
+  thread you don't mind losing.
+
+  result: Debug build from PR #3 installed and launched on device A059 for
+  hands-on review of the swipe-reveal feel.
+
+✻ Brewed for 55s · done Sunday, Jul 19 at 8:57 PM
+
+❯ The build doesn't work, can I build the version in this worktree to try out?  
+
+⏺ Let me get evidence before guessing — checking whether it crashed.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Found it — lastUpdateTime is July 14, five days ago. My install didn't touch
+  this package. Almost certainly a debug applicationId suffix, meaning I
+  launched the wrong (old) app.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Confirmed — my mistake. The debug build installs as net.liquidx.leman.debug
+  (there's an applicationIdSuffix = ".debug" on line 29), but my grep -m1 
+  applicationId grabbed line 18 and missed it. So I launched net.liquidx.leman —
+  a different, older app from July 14. Your install was fine; I pointed you at
+  the wrong icon.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ The debug package was updated today at 21:57 by my install, from an APK built
+  at 17:39 — after all my source changes. So the right code is on the device; I
+  just launched the wrong package. Launching the correct one.
+
+  Read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+⏺ It's working — and the screenshot proves it. Look at the "Zoidberg" row: it's
+  slid left with delete revealed in red. That's the new feature running on your
+  device right now.
+
+  What went wrong was my launch command, not the build. The debug variant
+  installs as net.liquidx.leman.debug (there's an applicationIdSuffix = ".debug"
+  on line 29 of app/build.gradle.kts), but my grep -m1 applicationId matched
+  line 18 and returned the base id. So I launched net.liquidx.leman — a
+  separate, older app last updated July 14. You were looking at five-day-old
+  code, which is exactly why the swipe did nothing.
+
+  The install itself was always fine: net.liquidx.leman.debug shows
+  lastUpdateTime=2026-07-19 21:57, from an APK built after all my changes.
+
+  Heads up — you have two of these apps installed, and they'll look nearly
+  identical in your launcher:
+
+  ┌─────────────────────────┬────────────┬──────────────────────────────────┐
+  │         Package         │   Last     │            What it is            │
+  │                         │  updated   │                                  │
+  ├─────────────────────────┼────────────┼──────────────────────────────────┤
+  │ net.liquidx.leman       │ Jul 14     │ Stale release-id build — no      │
+  │                         │            │ swipe feature                    │
+  ├─────────────────────────┼────────────┼──────────────────────────────────┤
+  │ net.liquidx.leman.debug │ Jul 19     │ This worktree's code — the one   │
+  │                         │ 21:57      │ to test                          │
+  └─────────────────────────┴────────────┴──────────────────────────────────┘
+
+  The debug one is the one now in the foreground. If you background it and come
+  back via the launcher, check you're reopening that one and not the July 14
+  build. Want me to uninstall the stale net.liquidx.leman so there's no
+  ambiguity? I'd rather ask than remove an app you might want.
+
+  Now that you're on the right build, the things I couldn't judge from a still
+  image: whether the ~200ms snap feels right or abrupt, whether a fast normal
+  scroll ever accidentally arms a row, and whether 88dp is a comfortable reveal.
+
+  result: Build was correct all along — I launched the wrong package
+  (net.liquidx.leman instead of net.liquidx.leman.debug); correct app now
+  running on device with swipe-to-reveal confirmed working.
+
+✻ Sautéed for 1m 29s · done Sunday, Jul 19 at 9:00 PM
+
+❯ Cool, this works now. Thanks! Could we document that debugging step in the    
+  docs or skills so that we don't make this mistake again?                      
+
+⏺ Good question — the right fix is wherever it'll actually get loaded next time
+  someone installs. Let me see what exists.
+
+  Listed 1 directory, ran 2 shell commands (ctrl+o to expand)
+
+⏺ Two findings worth acting on. There's a referenced-but-missing android-run
+  skill (the emulator skill points to it), and — more importantly — the emulator
+  skill's script has the exact same bug I hit:
+
+  PKG="$(grep -E '^\s*applicationId' app/build.gradle.kts | head -1 | ...)"   # 
+  ignores applicationIdSuffix
+
+  So the mistake is already baked into a script that would misfire on this
+  project. Let me create the missing skill properly and fix that latent bug.
+
+⏺ Skill(skill-creator)
+  ⎿  Successfully loaded skill
+⏺ I don't need Step 1 — I just lived the failure case. Initializing the skill.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Before writing the script, let me verify the reliable way to get the package
+  name — from the built APK, not from gradle text.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  1 skill available
+
+⏺ aapt2 dump packagename returns net.liquidx.leman.debug — suffix included,
+  straight from the artifact being installed. That's the fix. Writing the
+  script.
+
+⏺ Write(~/.claude/skills/android-run/scripts/run_on_device.sh)
+  ⎿  Wrote 83 lines to
+     ~/.claude/skills/android-run/scripts/run_on_device.sh
+       1 #!/usr/bin/env bash
+       2 # Build, install, and launch the debug app on a physical Android
+       3 #
+       4 # Derives the package name from the built APK rather than from b
+         uild.gradle, so
+         m project root.
+       6 #
+       7 # Usage: run_on_device.sh [adb-serial]
+       9 
+      10 SERIAL="${1:-}"
+     … +103 lines (ctrl+o to expand)
+
+⏺ The skill-creator requires scripts be actually run. Testing it end-to-end on
+  your device.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ macOS ships bash 3.2, which has no mapfile. Making it portable.
+
+⏺ Update(~/.claude/skills/android-run/scripts/run_on_device.sh)
+  ⎿  Added 5 lines, removed 1 line
+      14  
+      15  # ---- Pick a device ------------------------------------------
+          ---------------
+      16  # Physical devices only: emulator serials start with "emulator-
+          ".
+      17 -mapfile -t DEVICES < <("$ADB" devices | awk '$2=="device" && $1
+         -!~/^emulator-/ {print $1}')                                    
+      17 +# No mapfile here: macOS ships bash 3.2, which does not have it
+         +.                                                              
+      18 +DEVICES=()                                                     
+      19 +while IFS= read -r line; do                                    
+      20 +  [ -n "$line" ] && DEVICES+=("$line")                         
+      21 +done < <("$ADB" devices | awk '$2=="device" && $1!~/^emulator-/
+         + {print $1}')                                                  
+      22  
+      23  if [ -n "$SERIAL" ]; then
+      24    TARGET="$SERIAL"
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Script works end-to-end — resolved net.liquidx.leman.debug correctly,
+  installed, launched, verified. Now the reference doc for the gotcha itself.
+
+⏺ Write(~/.claude/skills/android-run/references/package-resolution.md)
+  ⎿  Wrote 75 lines to
+     ~/.claude/skills/android-run/references/package-resolution.md
+      1 # Resolving the package name (and why it bites)
+      2 
+      3 ## The failure
+      4 
+      5 Grepping the application id out of Gradle:
+      6 
+      7 ```bash
+      8 PKG=$(grep -m1 'applicationId' app/build.gradle.kts | sed 's/.*"\
+        (.*\)".*/\1/')
+      9 ```
+     … +84 lines (ctrl+o to expand)
+
+⏺ Write(~/.claude/skills/android-run/SKILL.md)
+  ⎿  Error writing file
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Write(~/.claude/skills/android-run/SKILL.md)
+  ⎿  Added 50 lines, removed 62 lines
+       1  ---
+       2  name: android-run
+       3 -description: [TODO: Complete and informative explanation of wha
+         -t the skill does and when to use it. Include WHEN to use this s
+         -kill - specific scenarios, file types, or tasks that trigger it
+         -.]                                                             
+       3 +description: Build, install, and launch an Android app on a phy
+         +sical device over USB or wireless ADB, and verify the running a
+         +pp is actually the build just installed. Use when the user want
+         +s to try a change on their phone or tablet — triggers include "
+         +install it on my device", "build and run on my phone", "deploy 
+         +to my device", "let me try it on the device", or checking wheth
+         +er a UI change feels right in the hand. For an emulator use and
+         +roid-emulator-run; for setting up wireless ADB first use wirele
+         +ss-adb.                                                        
+       4  ---
+       5  
+       6 -# Android Run                                                  
+       6 +# Android Run (physical device)                                
+       7  
+       8 -## Overview                                                    
+       8 +## Quick start                                                 
+       9  
+      10 -[TODO: 1-2 sentences explaining what this skill enables]       
+      10 +From the project root:                                         
+      11  
+      12 -## Structuring This Skill                                      
+      12 +```bash                                                        
+      13 +bash ~/.claude/skills/android-run/scripts/run_on_device.sh     
+      14 +```                                                            
+      15  
+      14 -[TODO: Choose the structure that best fits this skill's purpose
+         -. Common patterns:                                             
+      16 +Pass an adb serial when more than one device is attached:      
+      17  
+      16 -**1. Workflow-Based** (best for sequential processes)          
+      17 -- Works well when there are clear step-by-step procedures      
+      18 -- Example: DOCX skill with "Workflow Decision Tree" → "Reading"
+         - → "Creating" → "Editing"                                      
+      19 -- Structure: ## Overview → ## Workflow Decision Tree → ## Step 
+         -1 → ## Step 2...                                               
+      18 +```bash                                                        
+      19 +bash ~/.claude/skills/android-run/scripts/run_on_device.sh 100.
+         +125.10.111:45981                                               
+      20 +```                                                            
+      21  
+      21 -**2. Task-Based** (best for tool collections)                  
+      22 -- Works well when the skill offers different operations/capabil
+         -ities                                                          
+      23 -- Example: PDF skill with "Quick Start" → "Merge PDFs" → "Split
+         - PDFs" → "Extract Text"                                        
+      24 -- Structure: ## Overview → ## Quick Start → ## Task Category 1 
+         -→ ## Task Category 2...                                        
+      22 +The script picks a physical device (never an emulator) → `assem
+         +bleDebug` →                                                    
+      23 +resolves the package **from the built APK** → `adb -s install -
+         +r` → resolves the                                              
+      24 +launcher activity → launches → verifies the process is alive an
+         +d reports the                                                  
+      25 +install time.                                                  
+      26  
+      26 -**3. Reference/Guidelines** (best for standards or specificatio
+         -ns)                                                            
+      27 -- Works well for brand guidelines, coding standards, or require
+         -ments                                                          
+      28 -- Example: Brand styling with "Brand Guidelines" → "Colors" → "
+         -Typography" → "Features"                                       
+      29 -- Structure: ## Overview → ## Guidelines → ## Specifications → 
+         -## Usage...                                                    
+      27 +## The one thing that must not be shortcut                     
+      28  
+      31 -**4. Capabilities-Based** (best for integrated systems)        
+      32 -- Works well when the skill provides multiple interrelated feat
+         -ures                                                           
+      33 -- Example: Product Management with "Core Capabilities" → number
+         -ed capability list                                             
+      34 -- Structure: ## Overview → ## Core Capabilities → ### 1. Featur
+         -e → ### 2. Feature...                                          
+      29 +**Never derive the package name by grepping `applicationId` fro
+         +m Gradle.** It                                                 
+      30 +misses `applicationIdSuffix`, so you install `com.example.app.d
+         +ebug` and then                                                 
+      31 +launch `com.example.app` — which may be a stale build that is s
+         +till installed                                                 
+      32 +and opens perfectly. The user sees their change missing and rea
+         +sonably concludes                                              
+      33 +the build is broken.                                           
+      34  
+      36 -Patterns can be mixed and matched as needed. Most skills combin
+         -e patterns (e.g., start with task-based, add workflow for compl
+         -ex operations).                                                
+      35 +Resolve it from the artifact instead:                          
+      36  
+      38 -Delete this entire "Structuring This Skill" section when done -
+         - it's just guidance.]                                          
+      37 +```bash                                                        
+      38 +aapt2 dump packagename app/build/outputs/apk/debug/app-debug.ap
+         +k                                                              
+      39 +```                                                            
+      40  
+      40 -## [TODO: Replace with the first main section based on chosen s
+         -tructure]                                                      
+      41 +Full explanation, fallbacks, and verification commands:        
+      42 +[references/package-resolution.md](references/package-resolutio
+         +n.md).                                                         
+      43  
+      42 -[TODO: Add content here. See examples in existing skills:      
+      43 -- Code samples for technical skills                            
+      44 -- Decision trees for complex workflows                         
+      45 -- Concrete examples with realistic user requests               
+      46 -- References to scripts/templates/references as needed]        
+      44 +## After launching                                             
+      45  
+      48 -## Resources                                                   
+      46 +Confirm the right build is live before handing over — `lastUpda
+         +teTime` should be                                              
+      47 +seconds old, not days:                                         
+      48  
+      50 -This skill includes example resource directories that demonstra
+         -te how to organize different types of bundled resources:       
+      49 +```bash                                                        
+      50 +adb shell dumpsys package "$PKG" | grep lastUpdateTime         
+      51 +```                                                            
+      52  
+      52 -### scripts/                                                   
+      53 -Executable code (Python/Bash/etc.) that can be run directly to 
+         -perform specific operations.                                   
+      53 +If the app is not running, it likely crashed:                  
+      54  
+      55 -**Examples from other skills:**                                
+      56 -- PDF skill: `fill_fillable_fields.py`, `extract_form_field_inf
+         -o.py` - utilities for PDF manipulation                         
+      57 -- DOCX skill: `document.py`, `utilities.py` - Python modules fo
+         -r document processing                                          
+      55 +```bash                                                        
+      56 +adb logcat -d | grep -A 30 FATAL                               
+      57 +```                                                            
+      58  
+      59 -**Appropriate for:** Python scripts, shell scripts, or any exec
+         -utable code that performs automation, data processing, or speci
+         -fic operations.                                                
+      59 +If `adb shell pm list packages | grep <base-id>` returns more t
+         +han one entry, the                                             
+      60 +device has both a suffixed and an unsuffixed variant with near-
+         +identical launcher                                             
+      61 +icons. State which package is under test, and offer to uninstal
+         +l the other.                                                   
+      62  
+      61 -**Note:** Scripts may be executed without loading into context,
+         - but can still be read by Claude for patching or environment ad
+         -justments.                                                     
+      63 +## Other gotchas                                               
+      64  
+      63 -### references/                                                
+      64 -Documentation and reference material intended to be loaded into
+         - context to inform Claude's process and thinking.              
+      65 -                                                               
+      66 -**Examples from other skills:**                                
+      67 -- Product management: `communication.md`, `context_building.md`
+         - - detailed workflow guides                                    
+      68 -- BigQuery: API reference documentation and query examples     
+      69 -- Finance: Schema documentation, company policies              
+      70 -                                                               
+      71 -**Appropriate for:** In-depth documentation, API references, da
+         -tabase schemas, comprehensive guides, or any detailed informati
+         -on that Claude should reference while working.                 
+      72 -                                                               
+      73 -### assets/                                                    
+      74 -Files not intended to be loaded into context, but rather used w
+         -ithin the output Claude produces.                              
+      75 -                                                               
+      76 -**Examples from other skills:**                                
+      77 -- Brand styling: PowerPoint template files (.pptx), logo files 
+      78 -- Frontend builder: HTML/React boilerplate project directories 
+      79 -- Typography: Font files (.ttf, .woff2)                        
+      80 -                                                               
+      81 -**Appropriate for:** Templates, boilerplate code, document temp
+         -lates, images, icons, fonts, or any files meant to be copied or
+         - used in the final output.                                     
+      82 -                                                               
+      83 ----                                                            
+      84 -                                                               
+      85 -**Any unneeded directories can be deleted.** Not every skill re
+         -quires all three types of resources.                           
+      65 +- **`./gradlew installDebug` installs to every attached device*
+         +*, emulators                                                   
+      66 +  included. Prefer `assembleDebug` + `adb -s <serial> install -
+         +r`.                                                            
+      67 +- **The launcher activity is often not `.MainActivity`.** Resol
+         +ve it with                                                     
+      68 +  `adb shell cmd package resolve-activity --brief "$PKG"` rathe
+         +r than guessing.                                               
+      69 +- **No device listed?** A wireless ADB connection drops when th
+         +e device sleeps or                                             
+      70 +  changes network — see the `wireless-adb` skill to reconnect. 
+      71 +- **`INSTALL_FAILED_UPDATE_INCOMPATIBLE`** means the installed 
+         +copy was signed                                                
+      72 +  with a different key (e.g. a store build). Uninstall it first
+         +, after checking                                               
+      73 +  with the user — uninstalling clears that app's data.         
+
+⏺ Cleaning up the generated example files and fixing the same latent bug in the
+  emulator skill.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Update(~/.claude/skills/android-emulator-run/scripts/run_on_emulator.sh)
+  ⎿  Added 14 lines, removed 2 lines
+      45  echo ">> Installing to emulator..."
+      46  "$ADB" -e install -r "$APK"
+      47  
+      48 -# 5. Resolve the launcher activity dynamically (do NOT hardcode
+         - it) and launch.                                               
+      49 -PKG="$(grep -E '^\s*applicationId' app/build.gradle.kts | head 
+         --1 | sed -E 's/.*"([^"]+)".*/\1/')"                            
+      48 +# 5. Resolve the package from the APK, NOT by grepping applicat
+         +ionId out of                                                   
+      49 +#    build.gradle: that silently drops applicationIdSuffix (e.g
+         +. ".debug"), so                                                
+      50 +#    you install one package and launch another -- often a stal
+         +e build that is                                                
+      51 +#    still installed, which opens fine and looks like your chan
+         +ge did nothing.                                                
+      52 +AAPT="$(ls "$SDK"/build-tools/*/aapt2 2>/dev/null | sort -V | t
+         +ail -1)"                                                       
+      53 +if [ -n "$AAPT" ]; then                                        
+      54 +  PKG="$("$AAPT" dump packagename "$APK" | tr -d '\r')"        
+      55 +else                                                           
+      56 +  PKG="$(grep -E '^\s*applicationId' app/build.gradle.kts | hea
+         +d -1 | sed -E 's/.*"([^"]+)".*/\1/')"                          
+      57 +  echo ">> WARNING: aapt2 not found; package may be missing an 
+         +applicationIdSuffix" >&2                                       
+      58 +fi                                                             
+      59 +echo ">> Package: $PKG"                                        
+      60 +                                                               
+      61 +# 6. Resolve the launcher activity dynamically (do NOT hardcode
+         + it) and launch.                                               
+      62  COMPONENT="$("$ADB" -e shell cmd package resolve-activity --bri
+          ef "$PKG" | tail -1 | tr -d '\r')"
+      63  echo ">> Launching $COMPONENT"
+      64  "$ADB" -e shell am start -n "$COMPONENT"
+
+⏺ Update(~/.claude/skills/android-emulator-run/SKILL.md)
+  ⎿  File must be read first
+  ⎿  1 skill available
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(~/.claude/skills/android-emulator-run/SKILL.md)
+  ⎿  Added 5 lines
+      50  
+      51  ## Key gotchas
+      52  
+      53 +- **Resolve the package from the APK, not from Gradle.**       
+      54 +  `aapt2 dump packagename <apk>` reports the final id. Grepping
+         + `applicationId`                                               
+      55 +  out of `build.gradle.kts` misses `applicationIdSuffix` (e.g. 
+         +`.debug`), so you                                              
+      56 +  install one package and launch another — often a stale build 
+         +that is still                                                  
+      57 +  installed and opens fine, making it look like the change did 
+         +nothing.                                                       
+      58  - **Resolve the activity dynamically.** The launcher activity i
+          s
+      59    `.MainComposeActivity`, NOT `.MainActivity`. Always resolve i
+          t with
+      60    `cmd package resolve-activity --brief <pkg>` rather than gues
+          sing.
+
+⏺ Validating and packaging the skill, then a final syntax check on the edited
+  emulator script.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Documented. Two things, because the mistake turned out to be more than a
+  one-off.
+
+  Created ~/.claude/skills/android-run/ — the physical-device counterpart that
+  android-emulator-run already referenced but which didn't exist. That missing
+  skill is arguably why I improvised the install by hand and got it wrong.
+
+  - scripts/run_on_device.sh — picks a physical device (never an emulator),
+    builds, resolves the package from the APK, installs to that specific serial,
+    resolves the launcher activity, launches, then verifies the process is
+    alive and prints lastUpdateTime. That last check is the one that would have
+    caught this in seconds.
+  - references/package-resolution.md — why the grep fails, and specifically why
+    it's convincing: it only misleads when a base-id build is also installed, so
+    the wrong app opens perfectly.
+
+  I tested the script end-to-end on your device rather than just writing it —
+  which caught a real bug: mapfile doesn't exist in macOS's bash 3.2. Fixed and
+  re-run; it correctly resolved net.liquidx.leman.debug.
+
+  Fixed the same bug in android-emulator-run. Its script had the identical line:
+
+  PKG="$(grep -E '^\s*applicationId' app/build.gradle.kts | head -1 | ...)"
+
+  So this wasn't my improvisation — the wrong technique was already written down
+  and would have misfired on this project the moment you ran it on an emulator.
+  Now uses aapt2 dump packagename with the grep only as a warned fallback.
+
+  Both scripts pass bash -n; the new skill passes the validator. A .skill bundle
+  is at ~/.claude/jobs/9b9fafdc/tmp/android-run.skill if you want to share it.
+
+  Two notes: I put this at user level (~/.claude/skills/) to match where
+  android-emulator-run lives and because the suffix trap is generic to Android,
+  not specific to this repo — say the word if you'd rather it lived in the
+  project. And the stale net.liquidx.leman from July 14 is still on your device;
+  I left it alone since removing an app clears its data, but it'll keep being a
+  confusable icon next to the debug build.
+
+  result: Created android-run skill (script tested on-device, resolves package
+  via aapt2, verifies install freshness) and fixed the same applicationIdSuffix
+  bug already present in android-emulator-run's script.
+
+✻ Cooked for 4m 13s · done Sunday, Jul 19 at 9:05 PM
+
+❯ ok, let's merge the current changes in this worktree into the main branch     
+  ⎿  1 skill available
+
+⏺ Same constraint as before — I can't run the merge myself. Let me get it ready
+  and check nothing's uncommitted.
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Working tree is clean, one commit ahead of main, MERGEABLE / CLEAN, and there
+  are still no CI checks on this repo — so the 238 local tests remain the only
+  gate. Taking it out of draft.
+
+  Marked ready PR #3 (ctrl+o to expand)
+
+⏺ PR #3 is ready to merge. To land it:
+
+  gh pr merge 3 --squash
+
+  Drop --delete-branch this time. That's the flag that errored on PR #2 — gh
+  tries to check out main locally before deleting the branch, and main is
+  already checked out in your primary directory, which git won't allow from a
+  worktree. The merge lands either way, but the flag makes it exit non-zero and
+  skip cleanup. I'll handle the branch and worktree removal after you merge.
+
+  One thing worth naming before you land it: you've now had this build in your
+  hand, but I never heard back on the parts I couldn't judge — whether the
+  ~200ms snap feels right, whether a fast scroll ever accidentally opens a row,
+  and whether 88dp reads well. If any of those felt off, it's cheaper to adjust
+  now than after merging. If they felt fine, go ahead — the tuning is two
+  constants (swipeSpring stiffness and DELETE_REVEAL_WIDTH) and trivially
+  changed later.
+
+✻ Brewed for 41s · done Sunday, Jul 19 at 9:06 PM
+
+※ recap: We built swipe-to-delete for sessions, then upgraded it so the row follows your finger and reveals a delete button; PR #3 is ready and waiting on you. Next: run `gh pr merge 3 --squash` (without `--delete-branch`), and I'll clean up after. (disable recaps in /config)
+
+❯ Merged ths PR                                                                 
+
+⏺ Verifying it landed, then cleaning up as promised.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Merged and verified. Cleaning up the branch and worktree.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Cleaning up worktree
+  ⎿  Removed worktree (branch worktree-swipe-reveal-animation)
+     Returned to /Users/liquidx/p/liquidx-leman-android
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Merged and cleaned up.
+
+  Verified: 76ef7a4 is the tip of origin/main, the squashed content is
+  byte-identical to my commit (git diff empty), and the new screenshot golden
+  2a-threads-delete-revealed.png landed with it. Remote branch, local branch,
+  and worktree are all gone — no stray refs. Your main checkout is now sitting
+  on 76ef7a4.
+
+  The debug-into-settings worktree is still there, but that's not mine — I left
+  it alone.
+
+  Where things stand across both PRs: #2 added swipe-to-delete wired to the
+  existing server DELETE; #3 made the row actually follow your finger and reveal
+  a delete button, and fixed three defects found during verification (the
+  drawBehind divider regression, the no-op fillMaxHeight hit area, and the
+  phantom accessibility targets). Plus the android-run skill and the
+  applicationIdSuffix fix in android-emulator-run, both of which live in
+  ~/.claude/skills/ and aren't part of this repo.
+
+  Two loose ends worth naming rather than leaving implicit:
+
+  - The swipe feel was never signed off. You had the build in hand, but the
+    specific questions — whether the ~200ms snap is right, whether a fast scroll
+    ever opens a row by accident, whether 88dp reads well — went unanswered.
+    It's on main now, so any adjustment is a fresh change. Both knobs are
+    one-line constants (swipeSpring stiffness, DELETE_REVEAL_WIDTH) if something
+    bothers you in daily use.
+  - The stale net.liquidx.leman from July 14 is still on your device, sitting
+    next to net.liquidx.leman.debug with a near-identical icon. That's the thing
+    that cost us a round trip. Happy to uninstall it — I've held off because
+    uninstalling clears that app's data.
+
+  result: PR #3 merged to main as 76ef7a4 (content verified identical,
+  screenshot golden included); branch and worktree cleaned up, no stray refs
+  remain.
+
+✻ Baked for 47s · done Sunday, Jul 19 at 9:13 PM

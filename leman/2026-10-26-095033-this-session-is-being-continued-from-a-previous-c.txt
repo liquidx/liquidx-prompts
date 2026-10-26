@@ -1,0 +1,2035 @@
+ ▐▛███▛█   Claude Code v2.1.310
+▝▜██████▀  Fable 5 · Claude Max
+ ▝▝   ▝▝   ~/p/liquidx-leman-android
+
+
+⏺ The spec suite is written. docs/spec/ now contains an index plus eight focused
+  design docs, all grounded in the turn-2 screens (2a–2d), the Wanderloop
+  design system, and the actual project setup (Kotlin 2.2 / Compose BOM 2025.12
+  / minSdk 34 / OpenAI-compatible gateway per your README).
+
+  What each doc decides:
+
+  - README.md — index, ground rules from the design handoff, existing project
+    facts.
+  - 01-architecture.md — single-module, package-by-layer, manual DI via
+    AppContainer (no Hilt), one StateFlow<UiState> per screen,
+    navigation-compose with four routes, foreground-first lifecycle (the agent
+    runs server-side, so no WorkManager). Also lists the exact new dependencies
+    and what was deliberately rejected (Retrofit, Markwon, Coil).
+  - 02-server-api.md — the assumed Hermes contract (REST for threads/turns + two
+    SSE streams: global events and per-thread deltas), flagged explicitly as
+    needing verification against the real gateway and isolated in data/remote.
+    Covers Last-Event-ID resume, heartbeat watchdog, backoff with jitter,
+    client_id idempotency, and a polling fallback if /v1/events doesn't exist.
+  - 03-sync-and-cache.md — Room as the UI's single source of truth (traces
+    stored as JSON columns, seq-based conflict rules), optimistic sends with
+    reconciliation, DataStore settings, and an Android Keystore AES-GCM scheme
+    for the API key with biometric gating — matching the "secure enclave · never
+    synced" copy in 2d.
+  - 04-error-handling.md — sealed ApiError taxonomy, a retry-policy table (user
+    actions never auto-retry; background sync always does), and error surfacing
+    that respects the design language: status-row states, inline faint text,
+    failed-send turn styling — no toasts or dialogs.
+  - 05-markdown-rendering.md — CommonMark parser + hand-written Compose renderer
+    (off-the-shelf renderers can't hit the pixel spec), a typed AgentBlock
+    model for action buttons/task lists/option tables/diff blocks, trace rollup
+    formatting, and streaming rules (deltas re-parse, partial-fence safety,
+    caret cursor, bottom-anchored autoscroll).
+  - 06-compose-components.md — LemanTheme with the exact color/type/motion
+    tokens, a true-1px hairline modifier, a glow modifier standing in for
+    box-shadow, and the full component catalog (StatusRow, TickStrip,
+    PromptField, ThreadRow, TraceLine/TraceTable, etc.). Icons: exactly two
+    Tabler vectors in the tab bar; everything else stays text glyphs, with a
+    font-fallback detection test since Spline Sans Mono may lack some glyphs.
+  - 07-testing.md — JVM-first suites (MockWebServer for SSE/wire, Turbine for
+    ViewModels), Roborazzi screenshots as the pixel-fidelity regression net,
+    instrumented Room/interaction tests, and one e2e streaming test against the
+    fake gateway. A single fixture corpus feeds tests, screenshots, and demo
+    mode.
+  - 08-debugging.md — a debug-only third tab with network log, live SSE console,
+    chaos flags (latency, stream drops, corrupt payloads, clock skew), a
+    Room/state inspector, a markdown playground, and an in-process
+    FakeHermesServer with scripted scenarios (demo, streaming, needs-you,
+    hostile).
+
+  One thing worth flagging: the biggest open risk across the docs is the Hermes 
+  gateway contract — threads, traces, and the event streams are Hermes
+  extensions beyond plain OpenAI compatibility, so 02 marks its endpoint/event
+  shapes as assumptions to verify first. If you can share the gateway's actual
+  API (or a sample curl session), I'd tighten 02 against it before any
+  implementation starts.
+
+✻ Sautéed for 7m 50s · done Tuesday, Jul 14 at 4:03 PM
+
+❯ /compact                                                                      
+  ⎿  Compacted (ctrl+o to see full summary)
+  ⎿  Read docs/spec/08-debugging.md (98 lines)
+  ⎿  Read docs/spec/07-testing.md (87 lines)
+  ⎿  Read docs/spec/06-compose-components.md (142 lines)
+  ⎿  Read docs/spec/05-markdown-rendering.md (132 lines)
+  ⎿  Read docs/spec/04-error-handling.md (93 lines)
+
+※ recap: Spec'd out the LeMan Android app design in docs/spec/: nine docs covering architecture, Hermes API, caching, errors, markdown, Compose components, testing, and debug tooling. Next: verify the assumed gateway API contract against the real Hermes server. (disable recaps in /config)
+
+❯ /login                                                                        
+  ⎿  Login successful
+
+❯ The hermes server will be at gent.ino.ink rather than hermes.liquidx.net. Can 
+  you try to see if you can test against that server? I'm not sure what auth    
+  it will use, maybe I need to give an api key as well in the config in order   
+  to be able to use the API?                                                    
+
+⏺ I'll probe gent.ino.ink to discover what API it exposes and what auth it
+  expects, then update the spec accordingly.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+⏺ /login returns 200 — let me see what that page reveals about the auth flow.
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+⏺ The backend is flaky — now returning 502 through Caddy. Let me retry with a
+  short backoff.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+❯ I've now added a .env that has the shared HERMES_API_KEY that we pass as the  
+  auth bearer header                                                            
+
+⏺ A .env with the shared key — let me grab it and test Bearer auth against the
+  API.
+
+  Listed 1 directory, ran 6 shell commands (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Fable 5's safeguards flagged this message. The safeguards are intentionally broad right now and may flag safe and routine coding, cybersecurity, or biology work. These measures let us bring you Mythos-level capabilities sooner, and we're working to refine them. Switched to Opus 4.8. Send feedback with /feedback or learn more
+  ⎿  Tip: You can configure model switch behavior in /config
+
+⏺ /v1/* still redirects even with a valid Bearer — it wants the SSO cookie too.
+  The Bearer key must exchange for a session somewhere. Let me probe the auth
+  endpoints to find the programmatic path.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ Ok, actually I have solved the restarting issue with the flakey api server,   
+  but the URL has changed to https://api.gent.ino.ink/ please update to use     
+  that one                                                                      
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Bearer auth works on api.gent.ino.ink. Model is hermes-agent. Now let me
+  discover the real API contract — this replaces the assumptions in spec 02.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ /v1/responses and /v1/runs are POST-only (OpenAI Responses API surface). No
+  thread-list or events endpoint exists. Let me make a real call to see the
+  response shape and whether streaming works.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Standard OpenAI chat.completion shape, and it works. Note the 13k prompt
+  tokens — there's a large agent system context server-side. Let me test
+  streaming and the Responses API (the likely home of server-side conversation
+  state / "threads").
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Streaming works (standard chat.completion.chunk SSE; the curl 56 is just head
+  closing the pipe). Now the Responses API — the likely home of server-side
+  conversation state.
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ /v1/runs returns a run_id with 202 started — this is the async agent-run API,
+  the real "threads" mechanism. Let me explore its lifecycle: polling, events,
+  and trace structure.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ The run has object: hermes.run, session_id, and a /events sub-resource (200) —
+  that's the trace/stream. There's no run-list endpoint (405), so thread
+  listing isn't server-side. Let me capture the events stream and the completed
+  run shape.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Real event grammar discovered: message.delta (streaming text),
+  reasoning.available (the thinking trace), run.completed (final output+usage).
+  Now let me test conversation continuity via session_id and trigger a
+  tool-using run to see the full event vocabulary.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Big findings: tool events (tool.started/tool.completed) are the trace steps,
+  and session_id groups runs but the follow-up did not recall "teal" —
+  server-side memory isn't automatically replaying history. Let me capture the
+  tool payload shapes and re-test continuity carefully, since this determines
+  whether the app manages conversation history itself.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Complete trace shape captured: tool.started {tool, preview}, tool.completed 
+  {tool, duration, error}, reasoning.available {text}. Now the decisive test —
+  does the app need to send its own history? Let me test continuity cleanly and
+  whether input accepts a full messages array.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Decisive: input accepts a messages array and the agent recalled the code — so
+  conversation history is client-managed, and session_id is just a run-grouping
+  key, not server memory. And the events stream has no SSE id:/retry: framing,
+  so Last-Event-ID resume isn't supported. Two more checks — does /events replay
+  for a completed run (cold-load of trace), and what do error responses look
+  like — then I'll rewrite the specs against reality.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ I now have the complete verified contract. Key discovery: there is no 
+  server-side thread store — POST /v1/runs is an async agent runner,
+  conversation history is client-managed (sent as a messages array), and
+  /v1/runs/{id}/events streams live and replays on reconnect (no Last-Event-ID).
+  This substantially changes the design. Let me read the docs that need
+  correcting.
+
+  Read 3 files (ctrl+o to expand)
+
+⏺ I have the complete verified contract. The headline is architectural: there's 
+  no server-side thread store — the gateway is a stateless agent runner with
+  client-managed history, so the app becomes the system of record. This rewrites
+  02 and 03 and ripples through the rest. Let me save the verified contract as
+  a project memory, then rewrite.
+
+  Listed 1 directory, wrote 2 memories (ctrl+o to expand)
+
+⏺ Now the full rewrite of 02 against the verified contract:
+
+⏺ Write(docs/spec/02-server-api.md)
+  ⎿  Added 177 lines, removed 102 lines
+        1  # 02 — Server API: connection, streaming, updates
+        2  
+        3 -## Status of this contract                                    
+        3 +## Status of this contract — VERIFIED                         
+        4  
+        5 -The repo README says the gateway is **OpenAI-compatible**. Cha
+          -t streaming therefore                                         
+        6 -follows the OpenAI SSE shape (`chat.completion.chunk` deltas).
+          - Threads, traces, and                                         
+        7 -thread-list events are **Hermes extensions**; the contract bel
+          -ow is the client's                                            
+        8 -assumption and must be verified against the running gateway (`
+          -https://hermes.liquidx.net`)                                  
+        9 -before implementation hardens. Everything wire-specific lives 
+          -in `data/remote` so a                                         
+       10 -contract correction touches one package: DTOs, `HermesClient`,
+          - and the DTO→domain mappers.                                  
+        5 +This contract was probed live against the running gateway on 2
+          +026-07-15 (gateway                                            
+        6 +`version 0.18.0`, model id `hermes-agent`) and reflects what t
+          +he server actually does, not                                  
+        7 +an assumption. Everything wire-specific still lives in `data/r
+          +emote` so a future gateway                                    
+        8 +change touches one package: DTOs, `HermesClient`, and the DTO→
+          +domain mappers.                                               
+        9  
+       10 +The single most important finding: **the gateway has no server
+          +-side thread/conversation                                     
+       11 +store.** It is a stateless *agent-run runner*. There is no thr
+          +ead list, no global event                                     
+       12 +feed, and no server-side pins/read/history. The **app is the s
+          +ystem of record** for                                         
+       13 +threads — which is why Room is primary storage, not a cache (0
+          +3).                                                           
+       14 +                                                              
+       15 +### Base URL & host                                           
+       16 +                                                              
+       17 +- Base URL is **`https://api.gent.ino.ink`** — note the `api.`
+          + subdomain.                                                   
+       18 +- The bare host `gent.ino.ink` is a **different service**: a c
+          +ookie-SSO web UI that                                         
+       19 +  302-redirects API paths to `/auth/login`. Pointing the app t
+          +here fails with redirects,                                    
+       20 +  not JSON. The config screen's default `server_url` is the `a
+          +pi.` origin, and URL                                          
+       21 +  validation should accept any `https` origin the user enters 
+          +(self-host friendly).                                         
+       22 +                                                              
+       23 +### Auth                                                      
+       24 +                                                              
+       25 +- `Authorization: Bearer <apiKey>` on every request. The key i
+          +s a single **shared static                                    
+       26 +  token** (64 hex chars), not per-user — provisioned out of ba
+          +nd (repo `.env`                                               
+       27 +  `HERMES_API_KEY` during development; entered in 2d on device
+          +).                                                            
+       28 +- Missing/invalid key → `401` with an OpenAI-style envelope:  
+       29 +  `{"error":{"message":"Invalid API key","type":"invalid_reque
+          +st_error","code":"invalid_api_key"}}`.                        
+       30 +- No cookie, no token exchange, no login round-trip on the `ap
+          +i.` host.                                                     
+       31 +                                                              
+       32  ## Transport
+       33  
+       14 -- OkHttp singleton, HTTP/2, gzip. Timeouts: connect 10s, read 
+          -30s (REST) / none (SSE),                                      
+       15 -  write 15s.                                                  
+       34 +- OkHttp singleton, HTTP/2, gzip. Timeouts: connect 10s, read 
+          +30s (REST) / none (run                                        
+       35 +  event stream), write 15s. Agent runs can take minutes, so th
+          +e **run is async** (below)                                    
+       36 +  rather than a long-held request — the socket that matters is
+          + the event stream.                                            
+       37  - Base URL and API key come from settings; changing either tea
+           rs down and rebuilds the
+       38    client (`ConnectionManager.reconfigure()`).
+       18 -- Auth: `Authorization: Bearer <apiKey>` on every request.    
+       19 -- Headers: `Accept: application/json` (REST) / `text/event-str
+          -eam` (SSE),                                                   
+       20 -  `User-Agent: leman-android/<versionName>`.                  
+       21 -- Cleartext HTTP is allowed **only** in debug builds (for the 
+          -mock server / LAN                                             
+       22 -  gateways) via a debug-only network security config.         
+       39 +- Headers: `Accept: application/json` (REST) / `text/event-str
+          +eam` (events),                                                
+       40 +  `Content-Type: application/json`, `User-Agent: leman-android
+          +/<versionName>`.                                              
+       41 +- Cleartext HTTP is allowed **only** in debug builds (mock ser
+          +ver / LAN gateways) via a                                     
+       42 +  debug-only network security config; the real gateway is TLS.
+       43  
+       24 -## Endpoints                                                  
+       44 +## Endpoints (verified)                                       
+       45  
+       26 -| Method & path | Purpose |                                   
+       27 -|---|---|                                                     
+       28 -| `GET /v1/health` | connectivity + latency probe; also used b
+          -y "test connection" in 2d. Returns `{ status, protocol: "v2", 
+          -streaming: true }` |                                          
+       29 -| `GET /v1/threads?limit=50&cursor=&updated_after=` | thread s
+          -ummaries, newest-activity first, cursor-paginated |           
+       30 -| `POST /v1/threads` `{ message, agent_profile? }` | create th
+          -read from first user message; returns full thread |           
+       31 -| `GET /v1/threads/{id}` | thread detail (summary + agent prof
+          -ile) |                                                        
+       32 -| `GET /v1/threads/{id}/turns?after_seq=` | ordered turns; `af
+          -ter_seq` for incremental fetch |                              
+       33 -| `POST /v1/threads/{id}/messages` `{ text, client_id, via_but
+          -ton? }` | append a user turn |                                
+       34 -| `PATCH /v1/threads/{id}` `{ pinned?, read? }` | client-visib
+          -le flags, if server-side; else pins/read are local-only (03) |
+       35 -| `DELETE /v1/threads` / `GET /v1/threads/export` | 2d DATA ac
+          -tions: clear all / export |                                   
+       36 -| `GET /v1/events` (SSE) | global stream: thread created/updat
+          -ed/state-changed |                                            
+       37 -| `GET /v1/threads/{id}/stream` (SSE) | per-thread stream: tur
+          -n deltas, trace steps, state |                                
+       46 +| Method & path | Status | Purpose |                          
+       47 +|---|---|---|                                                 
+       48 +| `GET /v1/health` | 200 | connectivity probe + version banner
+          + (2d "test connection"). Returns `{ status, platform, version 
+          +}` |                                                          
+       49 +| `GET /v1/models` | 200 | model list; `data[].id` = `hermes-a
+          +gent`. Used to validate a connection and populate the agent mo
+          +del |                                                         
+       50 +| `POST /v1/runs` | 202 | **start an async agent run** (the co
+          +re call). Body `{ model, input, session_id? }` → `{ run_id, st
+          +atus:"started" }` |                                           
+       51 +| `GET /v1/runs/{id}` | 200 | poll run status/result. Returns 
+          +the `hermes.run` object |                                     
+       52 +| `GET /v1/runs/{id}/events` | 200 | **SSE event stream** for 
+          +a run: streaming text, reasoning, tool steps, completion. Live
+          + while running; **replays full history for a finished run** | 
+       53 +| `POST /v1/chat/completions` | 200 | standard OpenAI chat (st
+          +ream + non-stream). Available as a fallback / simple path; not
+          + used for the primary agent UX |                              
+       54 +| `POST /v1/responses` | 200 | OpenAI Responses API (`output[]
+          +`, `store`). Not used by the app; noted for completeness |    
+       55  
+       56 +Confirmed **absent** (all 404, or 405 for list): `GET /v1/runs
+          +` (no list), `/v1/threads*`,                                  
+       57 +`/v1/events`, `/openapi.json`, `/docs`. The app must not depen
+          +d on any of these.                                            
+       58 +                                                              
+       59 +### `input` carries the conversation — history is client-manag
+          +ed                                                            
+       60 +                                                              
+       61 +`POST /v1/runs` accepts `input` as **either** a plain string *
+          +*or a messages array**                                        
+       62 +`[{ role, content }]`. Passing the full prior conversation as 
+          +the array is how the agent                                    
+       63 +"remembers" — verified: a run given `[user, assistant, user]` 
+          +correctly answered a                                          
+       64 +question about the first user message.                        
+       65 +                                                              
+       66 +`session_id` (echoed back on every run, defaults to the run's 
+          +own id) **groups** runs but                                   
+       67 +does **not** auto-replay history into model context — verified
+          +: a follow-up run that                                        
+       68 +passed only `session_id` (and not the history) did *not* recal
+          +l an earlier fact. So:                                        
+       69 +                                                              
+       70 +> To advance a thread, the app POSTs a run with `input =` the 
+          +thread's full turn history                                    
+       71 +> (mapped to `{role,content}`) plus the new user message. `ses
+          +sion_id` is retained for                                      
+       72 +> correlation/telemetry, not relied on for memory.            
+       73 +                                                              
+       74  ### Wire models (DTOs)
+       75  
+       76  ```kotlin
+       42 -@Serializable data class ThreadDto(                           
+       43 -    val id: String, val title: String, val preview: String,   
+       44 -    val state: String,                    // running | needs_y
+          -ou | done | idle | scheduled                                  
+       45 -    val progress: ProgressDto?,           // { step, total } w
+          -hen running                                                   
+       46 -    val unread: Boolean = false, val pinned: Boolean = false, 
+       47 -    val lastActiveAt: Instant, val seq: Long,          // mono
+          -tonic per-thread version                                      
+       48 -    val agentProfile: AgentProfileDto?,   // { name, glyph, pr
+          -ofileLabel } — nullable                                       
+       77 +@Serializable data class HealthDto(         // GET /v1/health 
+       78 +    val status: String,                     // "ok"           
+       79 +    val platform: String,                   // "hermes-agent" 
+       80 +    val version: String,                    // "0.18.0"       
+       81  )
+       82  
+       51 -@Serializable data class TurnDto(                             
+       52 -    val id: String, val threadId: String, val seq: Long,      
+       53 -    val kind: String,                     // user | agent | tr
+          -ace                                                           
+       54 -    val createdAt: Instant, val viaButton: Boolean = false,   
+       55 -    val markdown: String?,                // user/agent turns 
+       56 -    val blocks: List<BlockDto> = emptyList(),   // structured 
+          -agent blocks (05)                                             
+       57 -    val trace: TraceDto?,                 // kind == trace    
+       83 +@Serializable data class RunAcceptedDto(    // POST /v1/runs (
+          +202)                                                          
+       84 +    @SerialName("run_id") val runId: String,                  
+       85 +    val status: String,                     // "started"      
+       86  )
+       87  
+       60 -@Serializable data class TraceDto(                            
+       61 -    val stepCount: Int, val durationMs: Long,                 
+       62 -    val toolHistogram: Map<String, Int>,  // { "ci.logs": 3, "
+          -repo.search": 2 }                                             
+       63 -    val steps: List<TraceStepDto>,        // { kind: tool|reas
+          -oning, tool?, argsSummary, resultSummary }                    
+       88 +@Serializable data class RunDto(            // GET /v1/runs/{i
+          +d}                                                            
+       89 +    val `object`: String,                   // "hermes.run"   
+       90 +    @SerialName("run_id") val runId: String,                  
+       91 +    val status: String,                     // started | runni
+          +ng | completed | failed                                       
+       92 +    @SerialName("session_id") val sessionId: String,          
+       93 +    val model: String,                                        
+       94 +    @SerialName("created_at") val createdAt: Double,   // floa
+          +t epoch seconds                                               
+       95 +    @SerialName("updated_at") val updatedAt: Double,          
+       96 +    @SerialName("last_event") val lastEvent: String? = null,  
+       97 +    val output: String? = null,             // present when co
+          +mpleted                                                       
+       98 +    val usage: UsageDto? = null,                              
+       99  )
+      100 +                                                              
+      101 +@Serializable data class UsageDto(                            
+      102 +    @SerialName("input_tokens")  val inputTokens: Int,        
+      103 +    @SerialName("output_tokens") val outputTokens: Int,       
+      104 +    @SerialName("total_tokens")  val totalTokens: Int,        
+      105 +)                                                             
+      106  ```
+      107  
+       67 -Unknown JSON fields are ignored (`ignoreUnknownKeys = true`); 
+          -unknown enum strings map to                                   
+       68 -explicit `Unknown` domain values rather than crashing — the ga
+          -teway will evolve faster                                      
+       69 -than the app.                                                 
+      108 +`Json { ignoreUnknownKeys = true }` everywhere; unknown `statu
+          +s`/event strings map to an                                    
+      109 +explicit `Unknown` domain value rather than crashing — the gat
+          +eway evolves independently.                                   
+      110  
+       71 -## ConnectionManager                                          
+      111 +## Run events (SSE) — the streaming + trace source            
+      112  
+       73 -Owns the app-wide connection state shown in the status row (`▪
+          - hermes · connected`).                                        
+      113 +`GET /v1/runs/{id}/events` is a `text/event-stream`. Framing n
+          +ote: the server sends                                         
+      114 +**`data:`-only frames** — there are **no `id:`, `event:`, or `
+          +retry:` lines**; the event                                    
+      115 +*type* is a field *inside* each JSON payload. Parse each `data
+          +:` line as JSON and switch on                                 
+      116 +`.event`. The stream ends with a `: stream closed` comment.   
+      117  
+      118 +```                                                           
+      119 +data: {"event":"message.delta",       "run_id":…, "timestamp":
+          +…, "delta":"2"}                                               
+      120 +data: {"event":"reasoning.available",  "run_id":…, "timestamp"
+          +:…, "text":"…summary…"}                                       
+      121 +data: {"event":"tool.started",         "run_id":…, "timestamp"
+          +:…, "tool":"web_search", "preview":"query text"}              
+      122 +data: {"event":"tool.completed",       "run_id":…, "timestamp"
+          +:…, "tool":"web_search", "duration":5.939, "error":false}     
+      123 +data: {"event":"run.completed",        "run_id":…, "timestamp"
+          +:…, "output":"…final text…", "usage":{…}}                     
+      124 +: stream closed                                               
+      125 +```                                                           
+      126 +                                                              
+      127  ```kotlin
+       76 -sealed interface ConnState {                                  
+       77 -    data object Disconnected : ConnState              // no co
+          -nfig yet                                                      
+       78 -    data object Connecting : ConnState                        
+       79 -    data class Connected(val latencyMs: Int, val protocol: Str
+          -ing) : ConnState                                              
+       80 -    data class Degraded(val error: ApiError) : ConnState   // 
+          -REST ok, stream down                                          
+       81 -    data class Failed(val error: ApiError) : ConnState     // 
+          -auth/server/network failure                                   
+      128 +@Serializable sealed interface RunEvent {          // custom d
+          +ecoder keyed on "event"                                       
+      129 +    val timestamp: Double                                     
+      130 +    @Serializable data class MessageDelta(val delta: String, o
+          +verride val timestamp: Double) : RunEvent                     
+      131 +    @Serializable data class Reasoning(val text: String, overr
+          +ide val timestamp: Double) : RunEvent                         
+      132 +    @Serializable data class ToolStarted(val tool: String, val
+          + preview: String?, override val timestamp: Double) : RunEvent 
+      133 +    @Serializable data class ToolCompleted(val tool: String, v
+          +al duration: Double, val error: Boolean, override val timestam
+          +p: Double) : RunEvent                                         
+      134 +    @Serializable data class RunCompleted(val output: String, 
+          +val usage: UsageDto?, override val timestamp: Double) : RunEve
+          +nt                                                            
+      135 +    data class Unknown(val raw: String, override val timestamp
+          +: Double = 0.0) : RunEvent                                    
+      136  }
+       83 -class ConnectionManager { val state: StateFlow<ConnState>; fun
+          - reconfigure(); suspend fun probe(): Result<Health> }         
+      137  ```
+      138  
+       86 -- On app start / reconfigure: `probe()` health, then let `Sync
+          -Engine` open streams.                                         
+       87 -- Latency = health round-trip, refreshed opportunistically; dr
+          -ives `connected · 42ms` in 2d.                                
+       88 -- State machine feeds every screen's status row via `UiState`.
+      139 +### How events map to the UI                                  
+      140  
+       90 -## Streaming (SSE)                                            
+      141 +- **`message.delta`** — appends to the streaming agent turn's 
+          +markdown (05 streaming                                        
+      142 +  rules). This is the visible answer text.                    
+      143 +- **`reasoning.available`** — the agent's thinking summary. Re
+          +ndered as (or folded into)                                    
+      144 +  the **trace** turn, muted + collapsed by default (design req
+          +uirement).                                                    
+      145 +- **`tool.started` / `tool.completed`** — a matched pair per t
+          +ool call = one **trace                                        
+      146 +  step**: tool name, `preview` (the args/query summary, gated 
+          +by `show_tool_args`),                                         
+      147 +  `duration` seconds, and `error`. These build the trace table
+          + and the rollup                                               
+      148 +  (`▸ trace · N steps · web_search ×k · Xm Ys`) — 05.         
+      149 +- **`run.completed`** — authoritative final `output` + `usage`
+          +. Replaces the accumulated                                    
+      150 +  streaming text and is what gets persisted as the agent turn.
+          + Marks the thread idle/done.                                  
+      151 +- **`error: true`** on `tool.completed`, or a `status:"failed"
+          +` run, surfaces per 04.                                       
+      152  
+       92 -Both streams use `okhttp-sse`'s `EventSource`, wrapped as a co
+          -ld `Flow<HermesEvent>`                                        
+       93 -(`callbackFlow`), parsed with kotlinx.serialization.          
+      153 +## Run lifecycle & the ConnectionManager                      
+      154  
+       95 -**Global stream** `GET /v1/events` — kept open while app is fo
+          -regrounded:                                                   
+      155 +There is no persistent app-wide socket (no global feed). "Conn
+          +ection" means *can we reach                                   
+      156 +the gateway and is a run in flight*. The status row reflects a
+          + lightweight health state                                     
+      157 +plus any active run.                                          
+      158  
+      159 +```kotlin                                                     
+      160 +sealed interface ConnState {                                  
+      161 +    data object NotConfigured : ConnState             // no ur
+          +l/key yet                                                     
+      162 +    data object Checking : ConnState                  // healt
+          +h probe in flight                                             
+      163 +    data class Online(val version: String) : ConnState   // GE
+          +T /v1/health ok → "hermes 0.18.0"                             
+      164 +    data class Offline(val error: ApiError) : ConnState  // he
+          +alth/network failure                                          
+      165 +    data class Unauthorized(val error: ApiError) : ConnState  
+          +// 401                                                        
+      166 +}                                                             
+      167 +class ConnectionManager { val state: StateFlow<ConnState>; fun
+          + reconfigure(); suspend fun probe(): ApiResult<HealthDto> }   
+      168  ```
+       98 -event: thread.updated        data: ThreadDto        (upsert in
+          -to cache)                                                     
+       99 -event: thread.created        data: ThreadDto                  
+      100 -event: thread.deleted        data: { id }                     
+      101 -```                                                           
+      169  
+      103 -**Per-thread stream** `GET /v1/threads/{id}/stream` — open onl
+          -y for the thread on                                           
+      104 -screen. Carries turn-level granularity, OpenAI-chunk-style:   
+      170 +- On app start / reconfigure: `probe()` → `GET /v1/health`. Su
+          +ccess = `Online(version)`                                     
+      171 +  and drives `▪ hermes · 0.18.0` / `connected` in the status r
+          +ow and the 2d caption.                                        
+      172 +- Health probe has a 5s timeout so the status row settles fast
+          + (04).                                                        
+      173  
+      106 -```                                                           
+      107 -event: turn.started    data: { turnId, kind, seq, createdAt } 
+      108 -event: turn.delta      data: { turnId, deltaMarkdown }        
+          -   // agent text streaming in                                 
+      109 -event: trace.step      data: { turnId, step: TraceStepDto }   
+          -   // running trace grows                                     
+      110 -event: turn.completed  data: TurnDto                          
+          -   // authoritative final turn                                
+      111 -event: thread.state    data: { state, progress? }             
+      112 -: heartbeat                                                   
+          -   // comment ping ~25s                                       
+      113 -```                                                           
+      174 +### Running a thread turn                                     
+      175  
+      115 -Client rules:                                                 
+      176 +`RunController` (in `data/repo`, per thread) drives one run:  
+      177  
+      117 -- Deltas accumulate into a `StreamingTurn` held in memory by `
+          -ThreadViewModel`;                                             
+      118 -  `turn.completed` **replaces** the accumulated turn and is wh
+          -at gets persisted to Room.                                    
+      119 -  Deltas are never persisted — a resumed session refetches ins
+          -tead.                                                         
+      120 -- Reconnect uses `Last-Event-ID` (server events carry `id: <se
+          -q>`) so a dropped stream                                      
+      121 -  resumes without gaps; if the server can't honor it, client f
+          -alls back to                                                  
+      122 -  `GET turns?after_seq=<last cached seq>` then re-opens the st
+          -ream.                                                         
+      123 -- Heartbeat watchdog: if nothing (including comments) arrives 
+          -for 60s, treat the stream                                     
+      124 -  as dead and reconnect.                                      
+      125 -- Reconnect backoff: 1s, 2s, 4s… cap 30s, ±20% jitter; reset o
+          -n success. While                                              
+      126 -  reconnecting, `ConnState.Degraded` — UI shows cached data an
+          -d an amber status dot,                                        
+      127 -  no blocking spinner.                                        
+      178 +1. `POST /v1/runs` with `input =` mapped history + new message
+          + → `run_id`.                                                  
+      179 +2. Open `GET /v1/runs/{id}/events` as a cold `Flow<RunEvent>` 
+          +(`okhttp-sse` or a raw                                        
+      180 +   buffered read of `data:` lines — the server's non-standard 
+          +framing means a hand-rolled                                   
+      181 +   line reader is simplest and is unit-tested against fixtures
+          +).                                                            
+      182 +3. Fold events into the in-memory streaming turn + live trace 
+          +(05).                                                         
+      183 +4. On `run.completed` (or stream close), persist the finalized
+          + agent turn + trace to Room,                                  
+      184 +   clear the streaming state, set thread state idle.          
+      185 +5. Also poll `GET /v1/runs/{id}` as a **backstop** if the even
+          +t stream drops before                                         
+      186 +   `run.completed` — the run may finish server-side while the 
+          +socket is gone; the poll                                      
+      187 +   recovers `output`/`usage` and the run status.              
+      188  
+      129 -**Sending while streaming:** `POST messages` carries a client-
+          -generated `client_id`                                         
+      130 -(UUID). The optimistic local turn (03) is reconciled when the 
+          -same `client_id` comes                                        
+      131 -back on `turn.completed`, so the echo isn't duplicated.       
+      189 +### Reconnect (no Last-Event-ID)                              
+      190  
+      191 +Because the stream carries no `id:` offsets, a dropped stream 
+          +**cannot resume mid-position**.                               
+      192 +Recovery is:                                                  
+      193 +                                                              
+      194 +- **If the run may still be running:** re-`GET /v1/runs/{id}` 
+          +for status. If still                                          
+      195 +  running, re-open `/events`. **The re-opened stream replays f
+          +rom the beginning** (verified                                 
+      196 +  on finished runs), so the client **resets the accumulated st
+          +reaming text and rebuilds**                                   
+      197 +  from the replay rather than appending — deltas are idempoten
+          +t only if you reset first.                                    
+      198 +- **If the run finished:** `GET /v1/runs/{id}` returns the ful
+          +l `output`; persist directly,                                 
+      199 +  skip the stream. `/events` on a finished run also still repl
+          +ays the whole trace, which is                                 
+      200 +  how a **cold-loaded thread lazily fetches an old run's trace
+          +** on demand.                                                 
+      201 +- Backoff between reconnect attempts: 1s, 2s, 4s… cap 30s, ±20
+          +% jitter; reset on success.                                   
+      202 +  While reconnecting, status row shows an amber `connecting…` 
+          +dot; the thread keeps its                                     
+      203 +  accumulated text visible (04).                              
+      204 +- No 60s heartbeat watchdog is needed — the server sends no ke
+          +epalive comments; liveness is                                 
+      205 +  the poll backstop plus the socket's own read behavior. A run
+          + that produces no events for                                  
+      206 +  an extended period is checked via `GET /v1/runs/{id}` rather
+          + than assumed dead.                                           
+      207 +                                                              
+      208  ## Update strategy summary
+      209  
+      135 -| Data | Fresh via | Fallback |                               
+      136 -|------|-----------|----------|                               
+      137 -| Thread list | global SSE upserts | pull-to-refresh + refetch
+          - on `STARTED` |                                               
+      138 -| Open thread | per-thread SSE | `turns?after_seq` catch-up on
+          - stream (re)open |                                            
+      139 -| Connection health | probe on start/reconfigure + stream live
+          -ness | manual "test connection" (2d) |                        
+      210 +| Data | How it stays fresh |                                 
+      211 +|------|--------------------|                                 
+      212 +| Thread **list** | purely local (Room) — there is no server l
+          +ist to sync. Threads are created and mutated on-device |      
+      213 +| Open thread, **live run** | `POST /v1/runs` → `/events` stre
+          +am; `GET /v1/runs/{id}` poll backstop |                       
+      214 +| Old run's **trace** | lazily `GET /v1/runs/{id}/events` (rep
+          +lays) when the user expands a persisted trace that wasn't full
+          +y stored |                                                    
+      215 +| Connection **health** | `GET /v1/health` on start/reconfigur
+          +e + before a send; manual "test connection" (2d) |            
+      216  
+      141 -If the gateway turns out not to provide `/v1/events`, the fall
+          -back *is* the strategy:                                       
+      142 -poll `GET /v1/threads?updated_after=<t>` every 20s while the l
+          -ist is visible, and rely                                      
+      143 -on the per-thread stream (which chat-style OpenAI gateways do 
+          -have) for the open thread.                                    
+      144 -`SyncEngine` isolates this decision behind `startListWatch()`.
+      217 +There is deliberately **no polling of a thread list and no glo
+          +bal SSE** — earlier drafts                                    
+      218 +assumed both; the live gateway provides neither, and the app d
+          +oesn't need them because it                                   
+      219 +owns the thread list itself.                                  
+
+⏺ Now the 03 rewrite — Room shifts from cache to system of record:
+
+⏺ Write(docs/spec/03-sync-and-cache.md)
+  ⎿  Added 109 lines, removed 83 lines
+       1 -# 03 — Sync & local cache                                      
+       1 +# 03 — Local store, runs & settings                            
+       2  
+       3 -## Principle: cache is the source of truth for the UI          
+       3 +## Principle: the app is the system of record                  
+       4  
+       5 -Compose never renders network responses directly. The network w
+         -rites into Room; the UI                                        
+       6 -observes Room `Flow`s. This gives instant cold-start rendering,
+         - offline reading, one                                          
+       7 -consistency point, and makes streaming/optimistic updates ordin
+         -ary cache writes.                                              
+       5 +The gateway has **no thread store** (02). It runs agent turns a
+         +nd forgets them; the only                                      
+       6 +server-side artifacts are short-lived `run` objects. Therefore 
+         +**Room is primary storage,                                     
+       7 +not a cache** — a thread exists because the app created a row f
+         +or it, not because the                                         
+       8 +server has one. This changes the earlier "cache mirrors server"
+         + model: there is nothing to                                    
+       9 +reconcile, no server-wins-by-`seq`, no prune-deleted pass, no g
+         +lobal event upserts.                                           
+      10  
+      11 +Compose still never renders network responses directly. Runs wr
+         +ite into Room via the                                          
+      12 +repository; the UI observes Room `Flow`s. This gives instant co
+         +ld start, offline reading,                                     
+      13 +and one consistency point.                                     
+      14 +                                                               
+      15  ```
+      10 -HermesClient ──▶ SyncEngine ──▶ Room ──Flow──▶ ViewModel ──▶ Co
+         -mpose                                                          
+      11 -                    ▲                             │            
+      12 -                    └──────── user actions ◀──────┘            
+      16 +                    ┌─────────── POST /v1/runs + /events (per a
+         +ctive run)                                                     
+      17 +                    ▼                                          
+      18 +RunController ──▶ ThreadRepository ──▶ Room ──Flow──▶ ViewModel
+         + ──▶ Compose                                                   
+      19 +                    ▲                                   │      
+      20 +                    └──────────── user actions ◀────────┘      
+      21  ```
+      22  
+      23 +## What a "thread" is                                          
+      24 +                                                               
+      25 +A thread is a **local conversation**: an ordered list of user +
+         + agent turns (agent turns                                      
+      26 +may carry a trace), plus a `sessionId` for correlating server r
+         +uns. To advance it, the                                        
+      27 +repository maps the thread's turns to `input = [{role,content},
+         + …]`, appends the new user                                     
+      28 +message, and starts a run (02). Nothing about the thread lives 
+         +on the server between runs.                                    
+      29 +                                                               
+      30  ## Room schema
+      31  
+      32  ```kotlin
+      33  @Entity(tableName = "threads")
+      34  data class ThreadEntity(
+      20 -    @PrimaryKey val id: String,                                
+      21 -    val title: String, val preview: String,                    
+      22 -    val state: String, val progressStep: Int?, val progressTota
+         -l: Int?,                                                       
+      23 -    val unread: Boolean, val pinned: Boolean,                  
+      24 -    val lastActiveAt: Long, val seq: Long,                     
+      25 -    val agentName: String?, val agentGlyph: String?, val agentP
+         -rofileLabel: String?,                                          
+      35 +    @PrimaryKey val id: String,               // client-generat
+         +ed UUID                                                        
+      36 +    val title: String,                        // derived from f
+         +irst user message (editable later)                             
+      37 +    val preview: String,                      // last turn snip
+         +pet, maintained on write                                       
+      38 +    val state: String,                        // idle | running
+         + | failed  (client-owned)                                      
+      39 +    val pinned: Boolean,                                       
+      40 +    val unread: Boolean,                      // set when a run
+         + completes off-screen                                          
+      41 +    val createdAt: Long,                                       
+      42 +    val lastActiveAt: Long,                   // orders the lis
+         +t; bumped on every turn                                        
+      43 +    val sessionId: String?,                   // last run's ses
+         +sion_id, for correlation                                       
+      44 +    val agentName: String?, val agentGlyph: String?,   // per-t
+         +hread identity override                                        
+      45  )
+      46  
+      47  @Entity(tableName = "turns",
+      48          primaryKeys = ["id"],
+      49          indices = [Index("threadId", "seq")])
+      50  data class TurnEntity(
+      32 -    val id: String, val threadId: String, val seq: Long,       
+      33 -    val kind: String,                       // user | agent | t
+         -race                                                           
+      34 -    val createdAt: Long, val viaButton: Boolean,               
+      35 -    val markdown: String?,                                     
+      36 -    val blocksJson: String?,                // structured block
+         -s, serialized as-is                                            
+      37 -    val traceJson: String?,                 // TraceDto seriali
+         -zed; parsed lazily on expand                                   
+      38 -    val sendState: String,                  // synced | sending
+         - | failed  (user turns only)                                   
+      39 -    val clientId: String?,                  // reconciliation k
+         -ey for optimistic sends                                        
+      51 +    val id: String, val threadId: String,                      
+      52 +    val seq: Long,                            // client-assigne
+         +d, monotonic within thread — ordering only                     
+      53 +    val kind: String,                         // user | agent |
+         + trace                                                         
+      54 +    val createdAt: Long,                                       
+      55 +    val markdown: String?,                    // user text / ag
+         +ent output                                                     
+      56 +    val blocksJson: String?,                  // structured age
+         +nt blocks if any (05)                                          
+      57 +    val traceJson: String?,                   // finalized trac
+         +e (reasoning + tool steps), one column                         
+      58 +    val runId: String?,                       // the server run
+         + that produced an agent/trace turn                             
+      59 +    val sendState: String,                    // synced | sendi
+         +ng | failed   (user turns)                                     
+      60 +    val viaButton: Boolean,                                    
+      61  )
+      62  ```
+      63  
+      64  Notes:
+      65  
+      45 -- Trace steps stay as one JSON column, not a `trace_steps` tabl
+         -e. They are read-only,                                         
+      46 -  always loaded with their turn, and never queried individually
+         - — a table adds joins for                                      
+      47 -  nothing. Same for rich blocks.                               
+      48 -- `seq` ordering (not timestamps) orders turns and drives incre
+         -mental fetch                                                   
+      49 -  (`turns?after_seq=`).                                        
+      50 -- DB version 1; `fallbackToDestructiveMigration` is acceptable 
+         -**only until first                                             
+      51 -  release**, then real migrations + a schema-export CI check (0
+         -7).                                                            
+      66 +- `seq` is **client-assigned** (there is no server sequence to 
+         +honor) — a per-thread                                          
+      67 +  counter, `maxSeq + 1` on append. It orders turns and nothing 
+         +else.                                                          
+      68 +- Trace steps and rich blocks stay as **one JSON column each**,
+         + not side tables — read-only,                                  
+      69 +  always loaded with their turn, never queried individually.   
+      70 +- A `trace` turn's `traceJson` is composed from the run's `reas
+         +oning.available` text plus                                     
+      71 +  the `tool.started`/`tool.completed` pairs (02, 05). If a live
+         + run's trace wasn't fully                                      
+      72 +  captured (e.g. app killed mid-run), `runId` lets the app re-f
+         +etch it later by replaying                                     
+      73 +  `/v1/runs/{runId}/events` (02).                              
+      74 +- DB version 1; `fallbackToDestructiveMigration` acceptable **o
+         +nly until first release**,                                     
+      75 +  then real migrations + schema-export CI check (07).          
+      76  
+      77  ### DAO essentials
+      78  
+     ...
+       83  @Query("SELECT * FROM turns WHERE threadId = :id ORDER BY seq"
+           )
+       84  fun observeTurns(id: String): Flow<List<TurnEntity>>
+       85  
+       62 -@Upsert suspend fun upsertThreads(items: List<ThreadEntity>)  
+       63 -@Upsert suspend fun upsertTurns(items: List<TurnEntity>)      
+       86  @Query("SELECT MAX(seq) FROM turns WHERE threadId = :id") susp
+           end fun maxSeq(id: String): Long?
+       87 +@Upsert suspend fun upsertThread(t: ThreadEntity)             
+       88 +@Upsert suspend fun upsertTurns(items: List<TurnEntity>)      
+       89 +@Query("DELETE FROM threads WHERE id = :id") suspend fun delet
+          +eThread(id: String)                                           
+       90  ```
+       91  
+       92  Filtering (2a) and day-grouping (`PINNED / TODAY / YESTERDAY /
+            EARLIER`) happen in the
+       68 -ViewModel over the observed list — dataset is small, and subst
+          -ring-match semantics stay                                     
+       69 -in Kotlin where they're unit-testable.                        
+       93 +ViewModel over the observed list — the dataset is small and lo
+          +cal, and substring-match                                      
+       94 +semantics stay in Kotlin where they're unit-testable.         
+       95  
+       71 -## SyncEngine                                                 
+       96 +## Running a turn (replaces "sync")                           
+       97  
+       73 -Lifecycle-scoped orchestrator (runs while app is `STARTED`):  
+       98 +`ThreadRepository.sendMessage(threadId, text, viaButton = fals
+          +e)`:                                                          
+       99  
+       75 -1. On start: `refreshThreads()` — fetch first page, upsert, pr
+          -une threads deleted                                           
+       76 -   server-side (full-list reconcile; dataset is small).       
+       77 -2. Open global event stream → upsert per event (02).          
+       78 -3. `watchThread(id)` while thread 2b is visible: catch-up fetc
+          -h `after_seq = maxSeq(id)`,                                   
+       79 -   then per-thread stream; `turn.completed` events upsert turn
+          -s.                                                            
+       80 -4. Marks thread read (`unread = false`) when its screen is ope
+          -ned; PATCHes server if the                                    
+       81 -   contract supports it, else local-only.                     
+      100 +1. Append a user `TurnEntity` immediately: `seq = maxSeq + 1`,
+          + `sendState = sending`. UI                                    
+      101 +   shows it at once. Bump the thread to `state = running`, `la
+          +stActiveAt = now`.                                            
+      102 +2. Build `input` from all prior turns of the thread (user/agen
+          +t → `{role,content}`; trace                                   
+      103 +   turns are **not** sent) + this user message.               
+      104 +3. `POST /v1/runs` (02). On `202`, store the `run_id`/`session
+          +_id` on the thread; flip the                                  
+      105 +   user turn to `sendState = synced`.                         
+      106 +4. Open `/v1/runs/{id}/events`; fold into an in-memory streami
+          +ng agent turn + live trace                                    
+      107 +   (05). The DB is **not** written per delta.                 
+      108 +5. On `run.completed`: persist the finalized agent turn (`mark
+          +down = output`, `runId`) and,                                 
+      109 +   if any reasoning/tool events occurred, a `trace` turn (`tra
+          +ceJson`). Set thread                                          
+      110 +   `state = idle`, update `preview`, set `unread` if the threa
+          +d isn't on screen.                                            
+      111 +6. On failure (POST error, stream dies with no completion and 
+          +the poll backstop shows                                       
+      112 +   `failed`): user turn → `sendState = failed`; thread → `stat
+          +e = failed`; surface per 04.                                  
+      113 +   **User actions never auto-retry** — the failed turn shows a
+          + `retry` affordance (04).                                     
+      114 +   Retry re-sends the same message (a new run; runs aren't ide
+          +mpotent server-side, but the                                  
+      115 +   app controls whether a retry happens, so there are no silen
+          +t duplicates).                                                
+      116  
+       83 -All writes funnel through `SyncEngine`/repository so conflict 
+          -rules live in one place:                                      
+       84 -**server wins by `seq`** — an upsert with `seq <= existing.seq
+          -` is dropped, except                                          
+       85 -`sendState`/`clientId` which are client-owned.                
+      117 +Creating a thread (2c) is the first `sendMessage` against a fr
+          +eshly inserted                                                
+      118 +`ThreadEntity`; the title is derived from that first message. 
+          +It is a local insert followed                                 
+      119 +by a normal run — no server "create thread" call exists.      
+      120  
+       87 -## Optimistic sends                                           
+      121 +## Pins, read, delete — all local                             
+      122  
+       89 -`sendMessage(threadId, text)`:                                
+      123 +- `pinned`, `unread`, `title` edits, and thread deletion are *
+          +*purely local** columns/ops;                                  
+      124 +  there is no server state to PATCH. Toggling is instant, no n
+          +etwork, no rollback path.                                     
+      125 +- "clear all threads" (2d) wipes local tables only — there is 
+          +nothing server-side to                                        
+      126 +  delete. It is still a confirm-guarded destructive action.   
+      127 +- `export threads` serializes the local store to a JSON share-
+          +sheet payload (works                                          
+      128 +  offline) — the app is the only place the data exists, so exp
+          +ort matters more here.                                        
+      129  
+       91 -1. Insert user `TurnEntity` immediately: `seq = maxSeq + 1` (p
+          -rovisional),                                                  
+       92 -   `sendState = sending`, fresh `clientId`. UI shows it instan
+          -tly.                                                          
+       93 -2. `POST /messages`. On success the authoritative turn arrives
+          - (response or stream) with                                    
+       94 -   the same `clientId` → replace provisional row (delete + ups
+          -ert authoritative).                                           
+       95 -3. On failure → `sendState = failed`; row renders with a dange
+          -r marker + `retry` action                                     
+       96 -   (04). Retry re-POSTs with the **same** `clientId` (server-s
+          -ide idempotency key).                                         
+       97 -                                                              
+       98 -New-thread creation (2c) is not optimistic — it's a navigation
+          - event. Show the composer's                                   
+       99 -send-in-progress state; navigate to `thread/{id}` when `POST /
+          -v1/threads` returns.                                          
+      100 -                                                              
+      101 -## Pins & read state                                          
+      102 -                                                              
+      103 -Assume server-side flags via `PATCH` (02). If the gateway lack
+          -s them, they become                                           
+      104 -local-only columns and survive refreshes because refresh upser
+          -ts never overwrite                                            
+      105 -client-owned fields. Either way pin toggling is optimistic wit
+          -h rollback on failure.                                        
+      106 -                                                              
+      130  ## Settings — DataStore (Preferences)
+      131  
+      132  | Key | Default | Screen |
+      133  |-----|---------|--------|
+      111 -| `server_url` | `""` | 2d SERVER |                           
+      134 +| `server_url` | `https://api.gent.ino.ink` | 2d SERVER |     
+      135  | `agent_name` | `juno` | 2d AGENT IDENTITY |
+      136  | `agent_glyph` | `✳` (one of `✳ ◆ ▲ ● ⌬`) | 2d |
+      137  | `biometric_unlock` | `false` | 2d AUTH |
+      138  | `expand_traces_by_default` | `false` | 2d DISPLAY → drives 2
+           b trace default |
+      116 -| `show_tool_args` | `true` | 2d DISPLAY → drives trace row re
+          -ndering |                                                     
+      139 +| `show_tool_args` | `true` | 2d DISPLAY → drives `tool.previe
+          +w` visibility in trace rows |                                 
+      140  
+      118 -Exposed as `Flow<Settings>`; ViewModels combine it into `UiSta
+          -te`. Per-thread agent                                         
+      119 -profile from the API overrides the configured default identity
+          - when present.                                                
+      141 +Exposed as `Flow<Settings>`; ViewModels combine it into `UiSta
+          +te`. `agent_name`/`glyph`                                     
+      142 +are display identity only — the model id sent to the gateway i
+          +s always `hermes-agent`                                       
+      143 +(02). A per-thread override (stored on `ThreadEntity`) beats t
+          +he global default.                                            
+      144  
+      145  ## API key — Keystore-backed
+      146  
+      123 -The design copy promises "key stored in secure enclave · never
+          - synced":                                                     
+      147 +The design copy promises "key stored in secure enclave · never
+          + synced". The key is the                                      
+      148 +shared Hermes bearer token (02):                              
+      149  
+      150  - AES-256-GCM key in **AndroidKeystore** (`setUserAuthenticati
+           onRequired(true)` when the
+      126 -  biometrics toggle is on, with a 30s validity window so one p
+          -rompt covers a burst of                                       
+      127 -  requests).                                                  
+      128 -- The API key string is encrypted with that key; ciphertext + 
+          -IV stored in a separate                                       
+      129 -  DataStore file **excluded from Android Auto Backup and devic
+          -e transfer** (update                                          
+      130 -  `backup_rules.xml` / `data_extraction_rules.xml`).          
+      131 -- `ApiKeyStore` API: `suspend fun get(): String?`, `suspend fu
+          -n set(value: String)`,                                        
+      132 -  `suspend fun clear()`. Decrypted value is held in memory by 
+          -`ConnectionManager` only.                                     
+      151 +  biometrics toggle is on, 30s validity window so one prompt c
+          +overs a burst of requests).                                   
+      152 +- The bearer token is encrypted with that key; ciphertext + IV
+          + in a DataStore file                                          
+      153 +  **excluded from Auto Backup / device transfer** (`backup_rul
+          +es.xml`,                                                      
+      154 +  `data_extraction_rules.xml`).                               
+      155 +- `ApiKeyStore`: `suspend fun get(): String?`, `set(value)`, `
+          +clear()`. Decrypted value is                                  
+      156 +  held in memory by `ConnectionManager` only, and masked in al
+          +l logs (08).                                                  
+      157  - `reveal` in 2d re-triggers `BiometricPrompt` when biometric 
+           unlock is on.
+      134 -- Keystore key invalidated (e.g. biometrics re-enrolled) → tre
+          -at as missing key: clear,                                     
+      135 -  surface `Failed(Auth)` state, direct user to 2d.            
+      158 +- Keystore key invalidated (biometrics re-enrolled) → treat as
+          + missing key: clear, surface                                  
+      159 +  `Unauthorized`, direct the user to 2d.                      
+      160  
+      161  ## Offline behavior
+      162  
+      139 -- Everything cached is readable offline; status row shows `▪ h
+          -ermes · offline` (faint dot).                                 
+      140 -- Composers stay enabled; sends queue as `sending` rows and ar
+          -e retried on reconnect                                        
+      141 -  (single in-order flush per thread by provisional `seq`).    
+      142 -- "clear all threads" (2d) requires connectivity — it is destr
+          -uctive and server-first:                                      
+      143 -  `DELETE` server, then wipe local tables on success. `export 
+          -threads` serializes from                                      
+      144 -  the **local cache** to a JSON share-sheet payload, so it wor
+          -ks offline.                                                   
+      163 +- Everything is local, so the entire app is readable offline; 
+          +the status row shows                                          
+      164 +  `▪ hermes · offline` (faint dot) once a health probe fails. 
+      165 +- Composers stay enabled; a send while offline lands as a `sen
+          +ding` user turn and the run                                   
+      166 +  is attempted — it fails fast to `failed` with a `retry` affo
+          +rdance (no background queue;                                  
+      167 +  the user decides when to retry, consistent with "user action
+          +s never auto-retry", 04).                                     
+      168 +- Because there is no server copy, local data loss is unrecove
+          +rable — hence export, the                                     
+      169 +  backup-exclusion caveat notwithstanding (the *key* is exclud
+          +ed from backup; thread data                                   
+      170 +  is ordinary app storage the user can export).               
+
+⏺ Now targeted edits to the ripple docs. Let me read 01 to fix the data/remote
+  contract and deps.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 2 lines, removed 2 lines
+      16  │   ├── model/                   Thread, Turn, TraceStep, Agent
+          Profile, ThreadState…
+      17  │   └── …                        small use-case helpers where l
+          ogic outgrows repos
+      18  ├── data/
+      19 -│   ├── remote/                  Hermes client: DTOs, SSE, mapp
+         -ing → domain (02)                                              
+      19 +│   ├── remote/                  Hermes client: DTOs, run event
+         + stream, mapping → domain (02)                                 
+      20  │   ├── local/                   Room db: entities, DAOs, mappi
+          ng → domain (03)
+      21  │   ├── settings/                DataStore prefs + Keystore-enc
+          rypted API key (03)
+      22 -│   └── repo/                    ThreadRepository, ConnectionMa
+         -nager, SyncEngine                                              
+      22 +│   └── repo/                    ThreadRepository, ConnectionMa
+         +nager, RunController                                           
+      23  ├── ui/
+      24  │   ├── theme/                   LemanTheme: colors, type, moti
+          on tokens (06)
+      25  │   ├── components/              design-system composables (06)
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 1 line, removed 2 lines
+      78      val db: LemanDatabase by lazy { … }
+      79      val hermesClient: HermesClient by lazy { … }        // inte
+          rface; fake in debug/tests
+      80      val connectionManager: ConnectionManager by lazy { … }
+      81 -    val threadRepository: ThreadRepository by lazy { … }       
+      82 -    val syncEngine: SyncEngine by lazy { … }                   
+      81 +    val threadRepository: ThreadRepository by lazy { … }  // ow
+         +ns per-run RunControllers                                      
+      82  }
+      83  ```
+      84  
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 9 lines, removed 7 lines
+      54  ```
+      55  
+      56  `UiState` is a plain data class — always renderable (loading/em
+          pty/error are states,
+      57 -not exceptions). ViewModels combine flows from Room (cached tru
+         -th) with connection                                            
+      58 -status; they never hold data the cache doesn't.                
+      57 +not exceptions). ViewModels combine flows from Room (the system
+         + of record, 03) with                                           
+      58 +connection status and any in-flight run's streaming state; they
+         + never hold data the store                                     
+      59 +doesn't, except the transient streaming turn/trace of an active
+         + run (persisted on                                             
+      60 +completion).                                                   
+      61  
+      62  ```
+      61 -   Room (Flow) ──┐                                             
+      62 -   ConnState  ───┼── combine ──▶ UiState ──▶ Compose           
+      63 -   prefs      ───┘                    ▲                        
+      64 -                                      │ events                 
+      65 -   SyncEngine ◀── repository ◀────────┘                        
+      63 +   Room (Flow) ─────┐                                          
+      64 +   ConnState  ──────┼── combine ──▶ UiState ──▶ Compose        
+      65 +   prefs      ──────┤                    ▲                     
+      66 +   streaming run ───┘                    │ events              
+      67 +   RunController ◀── repository ◀────────┘                     
+      68  ```
+      69  
+      70  ## Dependency injection
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 2 lines, removed 2 lines
+      37  - `domain` imports nothing from `data` or `ui`. Models are immu
+          table `data class`es.
+      38  - `ui` talks only to `data/repo` (repositories + `ConnectionMan
+          ager`), never to
+      39    `remote`/`local` directly.
+      40 -- `data/remote` is the **only** place that knows the Hermes wir
+         -e format. DTOs never                                           
+      41 -  leak past the repository boundary.                           
+      40 +- `data/remote` is the **only** place that knows the Hermes wir
+         +e format (the run-runner                                       
+      41 +  API and its `data:`-only event framing, 02). DTOs never leak 
+         +past the repository boundary.                                  
+      42  - All I/O is `suspend` or `Flow`; nothing blocks the main threa
+          d. Repositories are
+      43    main-safe (they internally dispatch to `Dispatchers.IO`).
+      44  
+
+⏺ Now the lifecycle section, which described a global stream and server-side
+  agent that no longer match:
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 9 lines, removed 6 lines
+      108  
+      109  - **Foreground-first.** LeMan is a viewer/remote-control; the 
+           *agent* runs server-side.
+      110    No WorkManager jobs, no foreground services in v0.1.
+      111 -- `SyncEngine` runs while the app is `STARTED` (lifecycle-scop
+          -ed): refresh thread list on                                   
+      112 -  start, open the global event stream, open a per-thread strea
+          -m for the visible thread                                      
+      113 -  (see 02). Everything is torn down on `STOP`; on restart, cac
+          -he renders instantly and                                      
+      114 -  sync catches up.                                            
+      115 -- Push notifications for `needs_you` transitions are a later m
+          -ilestone (requires gateway                                    
+      116 -  support); the design accounts for it only via the deep link 
+          -above.                                                        
+      111 +- The thread list is local (03), so cold start renders instant
+          +ly from Room with no network.                                 
+      112 +  There is no global stream to open — the only live socket is 
+          +a run's event stream (02),                                    
+      113 +  opened when the user sends a message and held while that run
+          + is in flight on the visible                                  
+      114 +  thread. It is torn down on `STOP`; an unfinished run is reco
+          +vered on return via                                           
+      115 +  `GET /v1/runs/{id}` and a stream re-open (which replays), se
+          +e 02.                                                         
+      116 +- A run started while the app is foregrounded but then backgro
+          +unded keeps running                                           
+      117 +  server-side; on return the app polls the run and replays its
+          + events to catch up. Truly                                    
+      118 +  detached background completion + push notification is a late
+          +r milestone (needs gateway                                    
+      119 +  push support); the design accounts for it only via the `lema
+          +n://thread/{id}` deep link.                                   
+      120  
+      121  ## New dependencies this spec introduces
+      122  
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 1 line, removed 1 line
+      124  
+      125  | Dep | For |
+      126  |-----|-----|
+      127 -| `com.squareup.okhttp3:okhttp` + `okhttp-sse` | HTTP + SSE st
+          -reaming (02) |                                                
+      127 +| `com.squareup.okhttp3:okhttp` | HTTP + run event streaming (
+          +02). The event stream uses non-standard `data:`-only framing, 
+          +so it's read with a hand-rolled line reader over the response 
+          +body rather than `okhttp-sse` |                               
+      128  | `org.jetbrains.kotlinx:kotlinx-serialization-json` | wire JS
+           ON (02) |
+      129  | `androidx.room:room-runtime/-ktx` + KSP compiler | local cac
+           he (03) |
+      130  | `androidx.datastore:datastore-preferences` | settings (03) |
+
+⏺ Update(docs/spec/01-architecture.md)
+  ⎿  Added 5 lines, removed 3 lines
+      134  | `org.commonmark:commonmark` (+ tables ext) | markdown parsin
+           g (05) |
+      135  | test/debug only: `mockwebserver`, `turbine`, `room-testing`,
+            `kotlinx-coroutines-test`, Roborazzi + Robolectric | (07, 08)
+            |
+      136  
+      137 -Deliberately **not** used: Retrofit (three endpoints + SSE — O
+          -kHttp directly is less                                        
+      138 -machinery), Hilt (see above), Coil (no images anywhere in the 
+          -design), Markwon                                              
+      139 -(View-based; we render markdown natively in Compose, see 05). 
+      137 +Deliberately **not** used: Retrofit (a handful of endpoints + 
+          +a custom event stream —                                       
+      138 +OkHttp directly is less machinery), `okhttp-sse` (the gateway'
+          +s `data:`-only framing isn't                                  
+      139 +standard SSE; a small custom reader is clearer and testable), 
+          +Hilt (see above), Coil (no                                    
+      140 +images anywhere in the design), Markwon (View-based; we render
+          + markdown natively in                                         
+      141 +Compose, see 05).                                             
+⏺ Now 04 — fix the invented health-caption fields and align the mid-stream
+  failure text:
+
+⏺ Update(docs/spec/04-error-handling.md)
+  ⎿  Added 1 line, removed 1 line
+      43  
+      44  | State | Rendering (micro type, 9px) |
+      45  |-------|------------------------------|
+      46 -| Connected | `▪ hermes · connected` — accent dot |            
+      46 +| Connected | `▪ hermes · 0.18.0` (health `version`) or `· conn
+         +ected` — accent dot |                                          
+      47  | Connecting/reconnecting | `▪ hermes · connecting…` — warn `#D
+          0A24C` dot |
+      48  | Offline (network) | `▪ hermes · offline` — faint `#54545E` do
+          t |
+      49  | Auth failed | `▪ hermes · auth failed` — danger `#D06A6A` dot
+           |
+
+⏺ Update(docs/spec/04-error-handling.md)
+  ⎿  Added 5 lines, removed 4 lines
+      66  text, appends a faint marker line `▪ stream interrupted · recon
+          necting…`, and the
+      67  watchdog/backoff reconnects. On catch-up fetch the authoritativ
+          e turn replaces it.
+      68  
+      69 -**5. Config screen (2d)** — `test connection` reports below the
+         - button in the caption                                         
+      70 -slot: `protocol v2 · streaming ok` (ok, faint) / `▪ unreachable
+         - · timed out after 10s`                                        
+      71 -(warn) / `▪ auth failed · check api key` (danger). Saving a mal
+         -formed URL validates                                           
+      72 -locally first (`https` scheme + host) with an 11px danger capti
+         -on under the field.                                            
+      69 +**5. Config screen (2d)** — `test connection` does `GET /v1/hea
+         +lth` and reports below the                                     
+      70 +button in the caption slot: `hermes-agent · v0.18.0` (ok, faint
+         + — from the health                                             
+      71 +`platform`/`version`) / `▪ unreachable · timed out after 10s` (
+         +warn) / `▪ auth failed ·                                       
+      72 +check api key` (danger). Saving a malformed URL validates local
+         +ly first (`https` scheme +                                     
+      73 +host) with an 11px danger caption under the field; the default 
+         +is `https://api.gent.ino.ink`.                                 
+      74  
+      75  **6. Auth failure global behavior** — streams closed, sync paus
+          ed, every status row goes
+      76  danger. The thread list shows one inline line under the tick st
+          rip:
+
+⏺ Update(docs/spec/04-error-handling.md)
+  ⎿  Added 7 lines, removed 3 lines
+      62  switches to danger `#D06A6A`, meta line reads `▪ failed · retry
+           / discard` (retry accent,
+      63  discard faint). Tapping retry re-sends with the same `client_id
+          `.
+      64  
+      65 -**4. Mid-stream failure (2b)** — a streaming agent turn that di
+         -es keeps accumulated                                           
+      66 -text, appends a faint marker line `▪ stream interrupted · recon
+         -necting…`, and the                                             
+      67 -watchdog/backoff reconnects. On catch-up fetch the authoritativ
+         -e turn replaces it.                                            
+      65 +**4. Mid-stream failure (2b)** — a run's event stream that dies
+         + keeps accumulated text,                                       
+      66 +appends a faint marker line `▪ stream interrupted · reconnectin
+         +g…`, and the backoff                                           
+      67 +reconnects. Recovery polls `GET /v1/runs/{id}`: if the run fini
+         +shed, its `output` replaces                                    
+      68 +the accumulated text; if still running, the stream re-opens and
+         + **replays from the start**,                                   
+      69 +so the client resets accumulated text and rebuilds (02). If the
+         + run itself failed                                             
+      70 +(`status:"failed"` or the poll keeps erroring), the turn settle
+         +s into the failed-send                                         
+      71 +treatment above.                                               
+      72  
+      73  **5. Config screen (2d)** — `test connection` does `GET /v1/hea
+          lth` and reports below the
+      74  button in the caption slot: `hermes-agent · v0.18.0` (ok, faint
+           — from the health
+
+⏺ Update(docs/spec/04-error-handling.md)
+  ⎿  Added 3 lines, removed 1 line
+      90  
+      91  ## Watchdogs & edge timings
+      92  
+      93 -- SSE liveness: 60s silence → reconnect (02).                  
+      93 +- Run-stream liveness: the server sends no keepalive, so there 
+         +is no fixed silence                                            
+      94 +  watchdog; a run producing no events for a long time is checke
+         +d via `GET /v1/runs/{id}`                                      
+      95 +  (02) rather than assumed dead.                               
+      96  - Health probe on `STARTED` has a 5s timeout so the status row 
+          settles fast.
+      97  - Backoff resets on any successful request, not only stream est
+          ablishment.
+      98  - Clock skew: all "TODAY / YESTERDAY" grouping uses device-loca
+          l calendar on
+
+⏺ Now 05 — align the trace model and streaming references with the real event
+  names:
+
+⏺ Update(docs/spec/05-markdown-rendering.md)
+  ⎿  Added 17 lines, removed 9 lines
+       93  
+       94  ## Thinking traces
+       95  
+       96 -Traces are their own turn kind, not markdown (see component sp
+          -ec in 06 for visuals):                                        
+       96 +Traces are their own turn kind, not markdown (see component sp
+          +ec in 06 for visuals). A                                      
+       97 +trace is composed **client-side from run events** (02), not de
+          +livered as a structured blob:                                 
+       98  
+       98 -- Collapsed line text is composed client-side from the rollup:
+       99 -  `▸ trace · 9 steps · ci.logs ×3 · repo.search ×2 · 3m 12s` (
+          -histogram sorted by count                                     
+      100 -  desc, top 2 tools, duration `Xm Ys`).                       
+      101 -- Expanded table renders `steps[]`; `argsSummary` respects the
+          - `show_tool_args` pref —                                      
+      102 -  off means tool rows show the tool name + `→ result` only.   
+       99 +- Each `tool.started`/`tool.completed` pair is one **tool step
+          +** — `tool` name,                                             
+      100 +  `preview` (the args/query summary), `duration` seconds, and 
+          +an `error` flag. Any                                          
+      101 +  `reasoning.available` text becomes a **reasoning step** (or 
+          +the trace's summary line).                                    
+      102 +- Collapsed line text is composed from the rollup:            
+      103 +  `▸ trace · 6 steps · web_search ×4 · repo.read ×2 · 3m 12s` 
+          +(tool histogram from the                                      
+      104 +  `tool` fields, sorted by count desc, top 2 tools; duration =
+          + sum of step `duration`s or                                   
+      105 +  run wall-clock, formatted `Xm Ys`).                         
+      106 +- Expanded table renders the steps; the tool `preview` respect
+          +s the `show_tool_args` pref —                                 
+      107 +  off means tool rows show the tool name + `· 5.9s` timing onl
+          +y, no query text. A step with                                 
+      108 +  `error:true` renders in danger.                             
+      109  - Default expanded/collapsed comes from `expand_traces_by_defa
+           ult`; per-trace toggles
+      110    override it for the session (`expandedTraces: Set<turnId>` i
+           n ViewModel state,
+      111    survives rotation via `SavedStateHandle`).
+      106 -- A **live** trace (thread running, `trace.step` events arrivi
+          -ng) shows the collapsed                                       
+      107 -  line with a growing step count and pulsing accent `▸`; steps
+          - append with `riseIn` when                                    
+      108 -  expanded.                                                   
+      112 +- A **live** trace (run in flight, `tool.started`/`reasoning.a
+          +vailable` events arriving)                                    
+      113 +  shows the collapsed line with a growing step count and pulsi
+          +ng accent `▸`; steps append                                   
+      114 +  with `riseIn` when expanded.                                
+      115 +- A persisted trace whose full step detail wasn't captured can
+          + be re-fetched lazily by                                      
+      116 +  replaying `GET /v1/runs/{runId}/events` on expand (02/03).  
+      117  
+      118  ## Streaming render rules
+      119  
+
+⏺ Update(docs/spec/05-markdown-rendering.md)
+  ⎿  Added 1 line, removed 1 line
+      117  
+      118  ## Streaming render rules
+      119  
+      120 -- `turn.delta` markdown accumulates in the ViewModel; `Markdow
+          -nBody` re-parses the                                          
+      120 +- `message.delta` text accumulates in the ViewModel; `Markdown
+          +Body` re-parses the                                           
+      121    accumulated string per frame-batch. CommonMark parses a few 
+           KB in <1ms — fine at the
+      122    ~10 Hz deltas arrive. If profiling ever disagrees: parse onl
+           y the tail paragraph
+      123    (split on last `\n\n`), keep completed paragraphs' `Annotate
+           dString`s cached. Don't
+
+⏺ 05's block model assumed the gateway emits typed JSON blocks; the real run API
+  returns only a markdown output string. Let me flip that assumption:
+
+⏺ Update(docs/spec/05-markdown-rendering.md)
+  ⎿  Added 11 lines, removed 7 lines
+       2  
+       3  ## Two layers of "rich"
+       4  
+       5 -Agent turns carry two kinds of content (02):                   
+       5 +The verified gateway (02) returns an agent turn as a **single m
+         +arkdown string** (`output`                                     
+       6 +/ `message.delta` text) — there is no structured block payload 
+         +on the wire. So both layers                                    
+       7 +below are produced **client-side** from that one string:       
+       8  
+       9  1. **`markdown`** — prose CommonMark the agent writes. Rendered
+           by our renderer with
+      10     LeMan styling.
+       9 -2. **`blocks[]`** — structured payloads the gateway emits for i
+         -nteractive/rich elements:                                      
+      10 -   action buttons, task/status lists, option tables, collapsibl
+         -e sections, code/diff                                          
+      11 -   blocks with filenames. These are *not* parsed out of markdow
+         -n; they arrive as typed                                        
+      12 -   JSON and map 1:1 to design components. (If the gateway turns
+         - out to inline everything                                      
+      13 -   in markdown, the block parser becomes a markdown post-proces
+         -sor behind the same                                            
+      14 -   `List<AgentBlock>` domain model — renderer unaffected.)     
+      11 +2. **`blocks[]`** — the richer design elements (fenced code/dif
+         +f with filenames,                                              
+      12 +   task/status lists, option tables, collapsible sections, and 
+         +— where the agent emits a                                      
+      13 +   recognized convention — action buttons). These are derived b
+         +y a **markdown                                                 
+      14 +   post-processor** that segments the parsed CommonMark AST int
+         +o the `List<AgentBlock>`                                       
+      15 +   domain model. The renderer consumes only that model, so if a
+         + future gateway *does* start                                   
+      16 +   emitting typed JSON blocks, only the producer changes — the 
+         +renderer is unaffected.                                        
+      17 +   Interactive action buttons depend on an agreed markdown/mark
+         +er convention with the                                         
+      18 +   agent; until one exists, agent output renders as prose + cod
+         +e/list/table blocks only.                                      
+      19  
+      20  ```kotlin
+      21  sealed interface AgentBlock {
+
+⏺ Update(docs/spec/05-markdown-rendering.md)
+  ⎿  Added 6 lines, removed 5 lines
+      85  
+      86  ## Interactive blocks
+      87  
+      88 -- **Actions**: square buttons per design (primary accent tint /
+         - neutral hairline /                                            
+      89 -  dismissive faint). Tap → `ThreadEvent.ActionTapped(button)` →
+         - optimistic user turn                                          
+      90 -  labeled `(via button)` + `POST messages { via_button: true }`
+         -. Buttons disable after                                        
+      91 -  any sibling is tapped (single choice per action group; state 
+         -derives from whether a                                         
+      92 -  later user turn references the group).                       
+      88 +- **Actions** (only if an action-button convention with the age
+         +nt exists — see above):                                        
+      89 +  square buttons per design (primary accent tint / neutral hair
+         +line / dismissive faint).                                      
+      90 +  Tap → `ThreadEvent.ActionTapped(button)` → a normal `sendMess
+         +age` with the button's                                         
+      91 +  payload as the user turn (marked `viaButton` for the `(via bu
+         +tton)` label), which starts                                    
+      92 +  a new run (02/03). Buttons disable after any sibling is tappe
+         +d (single choice per action                                    
+      93 +  group; state derives from whether a later user turn reference
+         +s the group).                                                  
+      94  - **Collapsible**: same `▸/▾` muted-line pattern as traces; bod
+          y is a surface-bg
+      95    `MarkdownBody`. Expansion state is UI-local (`rememberSaveabl
+          e`), animates `riseIn`.
+      96  - **TaskList / OptionTable**: pure display; live progress arriv
+          es as `turn.delta`
+
+⏺ Now 08 — update the fake gateway to implement the real run-runner contract and
+  event names:
+
+⏺ Update(docs/spec/08-debugging.md)
+  ⎿  Added 6 lines, removed 4 lines
+      11  mistaken for product UI). It opens a DEBUG screen in the design
+           language with sections:
+      12  
+      13  ### GATEWAY
+      14 -- Active target: real server URL vs **mock server** toggle (see
+         - below).                                                       
+      14 +- Active target: real server URL (`https://api.gent.ino.ink`) v
+         +s **mock server** toggle                                       
+      15 +  (see below). Quick health readout from `GET /v1/health` (`pla
+         +tform · version`).                                             
+      16  - Connection state machine readout: current `ConnState`, last t
+          ransition times, backoff
+      16 -  attempt counter.                                             
+      17 -- Actions: `force reconnect` · `drop stream` (kills the SSE soc
+         -ket to exercise                                                
+      18 -  reconnect) · `expire auth` (poisons the in-memory key to exer
+         -cise 401 flow).                                                
+      17 +  attempt counter, and the active run's `run_id`/status if one 
+         +is in flight.                                                  
+      18 +- Actions: `force reconnect` · `drop run stream` (kills the `/v
+         +1/runs/{id}/events` socket                                     
+      19 +  mid-run to exercise reconnect + replay) · `expire auth` (pois
+         +ons the in-memory bearer                                       
+      20 +  token to exercise the `401 invalid_api_key` flow).           
+      21  
+      22  ### NETWORK LOG
+      23  - Ring buffer (last 200) of REST calls: method, path, status, d
+          uration, byte sizes;
+
+⏺ Update(docs/spec/08-debugging.md)
+  ⎿  Added 3 lines, removed 2 lines
+      26  - `copy as curl` per request.
+      27  
+      28  ### EVENT CONSOLE
+      29 -- Live tail of SSE events (both streams): event name, seq, payl
+         -oad preview; pausable;                                         
+      29 +- Live tail of run events (`message.delta` / `reasoning.availab
+         +le` / `tool.started` /                                         
+      30 +  `tool.completed` / `run.completed`): event name, timestamp, p
+         +ayload preview; pausable;                                      
+      31    filter field (same `PromptField` component). Invaluable for c
+          ontract drift against a
+      31 -  real gateway.                                                
+      32 +  real gateway — this is where the non-standard `data:`-only fr
+         +aming (02) is eyeballed.                                       
+      33  
+      34  ### CHAOS
+      35  Fault injection flags (interceptor + fake-server hooks), each a
+           `LemanToggle`:
+
+⏺ Update(docs/spec/08-debugging.md)
+  ⎿  Added 17 lines, removed 10 lines
+      54  An in-process fake implementing the `HermesClient` interface (s
+          wapped via
+      55  `AppContainer.Overrides`) — not a socket server, so it's trivia
+          lly usable from
+      56  instrumented tests and has zero-latency determinism, while the 
+          chaos flags reintroduce
+      57 -latency when wanted.                                           
+      57 +latency when wanted. It mirrors the real contract (02): `POST /
+         +v1/runs` returns a `run_id`,                                   
+      58 +and `GET /v1/runs/{id}/events` emits the real event vocabulary 
+         +and **replays** for a                                          
+      59 +finished run.                                                  
+      60  
+      59 -- Seeded from the shared fixture corpus (07) — boots the app lo
+         -oking exactly like the                                         
+      60 -  design mocks.                                                
+      61 -- **Scripted scenarios**, selectable in the GATEWAY section:   
+      62 -  - `demo` — static handoff data.                              
+      63 -  - `streaming` — a running thread emits `turn.delta`/`trace.st
+         -ep` on a timer                                                 
+      64 -    (replays the "fix flaky ci" conversation in real time).    
+      65 -  - `needs-you` — a thread flips to `needs_you` 10s after launc
+         -h with action buttons.                                         
+      66 -  - `hostile` — slow, flaky, occasionally malformed; long title
+         -s, 4-page markdown,                                            
+      67 -    50-step traces, emoji, RTL text.                           
+      61 +- Because threads are local (03), the fake only needs to answer
+         + runs; the thread list is                                      
+      62 +  seeded straight into Room from the shared fixture corpus (07)
+         + so the app boots looking                                      
+      63 +  exactly like the design mocks.                               
+      64 +- **Scripted run scenarios**, selectable in the GATEWAY section
+         +:                                                              
+      65 +  - `demo` — completes instantly with canned `output` (+ a cann
+         +ed trace) so screens match                                     
+      66 +    the handoff.                                               
+      67 +  - `streaming` — emits `message.delta` + interleaved `tool.sta
+         +rted`/`tool.completed` and                                     
+      68 +    `reasoning.available` on a timer, then `run.completed` (rep
+         +lays the "fix flaky ci"                                        
+      69 +    turn in real time).                                        
+      70 +  - `needs-you` — completes with an agent turn that ends in a q
+         +uestion / renders action                                       
+      71 +    buttons (the `needs_you` look is now a client-side thread s
+         +tate, 03).                                                     
+      72 +  - `hostile` — slow, flaky, `tool.completed{error:true}` steps
+         +, occasional malformed                                         
+      73 +    frame (exercises the defensive parser), long output, 50-ste
+         +p traces, emoji, RTL text,                                     
+      74 +    and a stream that drops before `run.completed` (exercises t
+         +he poll backstop).                                             
+      75  - Also the backend for the e2e instrumented test and for screen
+          shot recording of
+      76    streaming states.
+      77  
+
+⏺ Now the README — reflect the verified contract and the app-owns-state model:
+
+⏺ Update(docs/spec/README.md)
+  ⎿  Added 2 lines, removed 2 lines
+      13  | Doc | Covers |
+      14  |-----|--------|
+      15  | [01-architecture.md](01-architecture.md) | Module/package lay
+          out, layers, DI, navigation, threading model |
+      16 -| [02-server-api.md](02-server-api.md) | Hermes gateway contrac
+         -t, connection lifecycle, streaming (SSE), live updates |       
+      17 -| [03-sync-and-cache.md](03-sync-and-cache.md) | Room cache as 
+         -source of truth, sync strategy, offline behavior, settings & ke
+         -y storage |                                                    
+      16 +| [02-server-api.md](02-server-api.md) | Hermes gateway contrac
+         +t (verified), async run lifecycle, run event stream, reconnect 
+         +|                                                              
+      17 +| [03-sync-and-cache.md](03-sync-and-cache.md) | Room as system
+         + of record (no server thread store), running a turn, offline be
+         +havior, settings & key storage |                               
+      18  | [04-error-handling.md](04-error-handling.md) | Error taxonomy
+          , retry policy, connection status surface, per-action failure U
+          X |
+      19  | [05-markdown-rendering.md](05-markdown-rendering.md) | Common
+          Mark → Compose pipeline, code/diff blocks, rich agent blocks, s
+          treaming render |
+      20  | [06-compose-components.md](06-compose-components.md) | Theme 
+          & tokens in Compose, component catalog, motion, icons & glyphs 
+          |
+
+⏺ Update(docs/spec/README.md)
+  ⎿  Added 13 lines, removed 3 lines
+      31    provide a per-thread agent profile that overrides it.
+      32  - Thinking traces render muted and **collapsed by default** (us
+          er preference can flip this).
+      33  
+      34 +## Gateway (verified 2026-07-15)                               
+      35 +                                                               
+      36 +- Base URL **`https://api.gent.ino.ink`** (the `api.` subdomain
+         +; the bare host is a                                           
+      37 +  separate cookie-SSO web UI — not our target). Auth is a share
+         +d static bearer token                                          
+      38 +  (`Authorization: Bearer <key>`, from `.env` `HERMES_API_KEY` 
+         +in dev). Gateway version                                       
+      39 +  0.18.0, model `hermes-agent`.                                
+      40 +- The gateway is an **OpenAI-compatible async agent-run runner*
+         +*, not a thread store:                                         
+      41 +  `POST /v1/runs` starts a run, `GET /v1/runs/{id}/events` stre
+         +ams it. There is no thread                                     
+      42 +  list, no global feed, no server-side history — **the app is t
+         +he system of record** for                                      
+      43 +  threads, and conversation history is sent by the client on ea
+         +ch run. See                                                    
+      44 +  [02-server-api.md](02-server-api.md) for the full verified co
+         +ntract and                                                     
+      45 +  [03-sync-and-cache.md](03-sync-and-cache.md) for the storage 
+         +model.                                                         
+      46 +                                                               
+      47  ## Existing project facts
+      48  
+      49  - `net.liquidx.leman`, minSdk 34, targetSdk/compileSdk 36, Kotl
+          in 2.2, Compose BOM 2025.12, AGP 9.
+      37 -- Gateway is OpenAI-compatible per the repo README; the thread/
+         -trace surface is a                                             
+      38 -  Hermes extension — see [02-server-api.md](02-server-api.md) f
+         -or the assumed contract                                        
+      39 -  and how it is isolated so contract drift stays in one layer. 
+
+⏺ Now 07 — update the wire/sync test coverage that referenced the old contract:
+
+⏺ Update(docs/spec/07-testing.md)
+  ⎿  Added 21 lines, removed 13 lines
+      15  ## Unit suites (JVM)
+      16  
+      17  **Wire / client (`data/remote`)** — against MockWebServer:
+      18 -- DTO decoding from fixture JSON: full thread, every turn kind,
+         - every block type,                                             
+      19 -  unknown fields ignored, unknown enums → `Unknown` (not crash)
+         -.                                                              
+      20 -- SSE `Flow` adapter: event parsing, heartbeat handling, `Last-
+         -Event-ID` sent on                                              
+      21 -  reconnect, watchdog fires after 60s silence (virtual time), b
+         -ackoff sequence                                                
+      22 -  1-2-4…30 with jitter bounds, backoff reset on success.       
+      23 -- Error mapping table: socket failures → `Network`, 401 → `Auth
+         -`, 500 → `Server`,                                             
+      24 -  garbage body → `Protocol`, each asserted through the public c
+         -lient API.                                                     
+      18 +- DTO decoding from fixture JSON: `HealthDto`, `RunAcceptedDto`
+         +, `RunDto` (running +                                          
+      19 +  completed), unknown fields ignored, unknown `status`/event st
+         +rings → `Unknown` (not crash).                                 
+      20 +- Run event stream reader: parsing the gateway's **`data:`-only
+         + framing** (no `id:`/`event:`                                  
+      21 +  lines; type is inside the JSON), each `RunEvent` variant, the
+         + trailing `: stream closed`                                    
+      22 +  comment, and a malformed frame surviving as `Unknown` rather 
+         +than crashing.                                                 
+      23 +- Reconnect semantics (virtual time): on stream re-open the acc
+         +umulated text is **reset**                                     
+      24 +  before replay (no double-append); backoff sequence 1-2-4…30 w
+         +ith jitter bounds, reset on                                    
+      25 +  success; poll backstop (`GET /v1/runs/{id}`) recovers a run t
+         +hat finished while the                                         
+      26 +  socket was gone.                                             
+      27 +- Error mapping table: socket failures → `Network`, `401 invali
+         +d_api_key` → `Auth`,                                           
+      28 +  `404 run_not_found` → `Client`, 5xx → `Server`, garbage body 
+         +→ `Protocol`, each asserted                                    
+      29 +  through the public client API.                               
+      30  
+      26 -**Sync (`data/repo`)** — fake client + in-memory Room:         
+      27 -- Refresh reconciliation: upsert, prune deleted, `seq` conflict
+         - rule (stale upsert                                            
+      28 -  dropped; client-owned `sendState` preserved).                
+      29 -- Optimistic send lifecycle: provisional row → authoritative re
+         -placement by `client_id`;                                      
+      30 -  failure → `failed`; retry reuses `client_id`; offline queue f
+         -lushes in order.                                               
+      31 -- Stream event application: `turn.completed` upserts; deltas ne
+         -ver touch the DB.                                              
+      31 +**Repository / runs (`data/repo`)** — fake client + in-memory R
+         +oom:                                                           
+      32 +- `input` assembly: a thread's turns map to `[{role,content}]` 
+         +in order; `trace` turns are                                    
+      33 +  excluded; the new user message is appended last.             
+      34 +- Run lifecycle: append `sending` user turn → `202` flips it to
+         + `synced` and stores                                           
+      35 +  `run_id`/`session_id` → fold events → on `run.completed` pers
+         +ist the agent turn +                                           
+      36 +  composed trace turn, bump `preview`/`lastActiveAt`, set `unre
+         +ad` when off-screen.                                           
+      37 +- Failure: POST error or a `failed`/never-completing run → user
+         + turn `failed`, thread                                         
+      38 +  `failed`; retry re-sends (a new run); no auto-retry of user a
+         +ctions.                                                        
+      39 +- Event application: deltas never touch the DB; only the finali
+         +zed turn is persisted.                                         
+      40  
+      41  **ViewModels** — Turbine over `state`:
+      42  - Thread list: filter semantics (case-insensitive substring on 
+          title+preview), grouping
+
+⏺ Update(docs/spec/07-testing.md)
+  ⎿  Added 4 lines, removed 2 lines
+      49  **Markdown/blocks (`ui/markdown` parsing halves)**:
+      50  - CommonMark → render-model snapshots over the fixture corpus (
+          lists, tables, inline
+      51    code, links, partial/unterminated input).
+      52 -- Diff line classification; trace rollup composer (`▸ trace · 9
+         - steps · ci.logs ×3 …`)                                        
+      53 -  including histogram ordering and duration formatting.        
+      52 +- Diff line classification; trace composer that folds `reasonin
+         +g.available` +                                                 
+      53 +  `tool.started`/`tool.completed` pairs into steps and the roll
+         +up                                                             
+      54 +  (`▸ trace · 6 steps · web_search ×4 …`), including histogram 
+         +ordering, `error` steps,                                       
+      55 +  `show_tool_args` gating, and duration formatting.            
+      56  
+      57  ## Screenshot suite (Roborazzi, records to `app/src/test/screen
+          shots/`)
+      58  
+
+⏺ Update(docs/spec/07-testing.md)
+  ⎿  Added 5 lines, removed 4 lines
+      73    glyph toggles without opening row (hit-area regression); trac
+          e line expands/collapses;
+      74    action button appends `(via button)` turn; composer send disa
+          bled when unconfigured.
+      75  - **E2E against the fake gateway** (08): app launched with `App
+          Container` overridden to
+      76 -  the in-process `FakeHermesServer` — script: cold start → list
+         - renders from seed →                                           
+      77 -  open thread → fake emits stream deltas → text appears increme
+         -ntally → send message →                                        
+      78 -  optimistic row reconciles. This one test exercises client, sy
+         -nc, cache, and UI                                              
+      79 -  together and is the merge gate for streaming changes.        
+      76 +  the in-process `FakeHermesServer` — script: cold start → list
+         + renders from the local seed                                   
+      77 +  → open thread → send message → fake accepts a run and emits `
+         +message.delta` + tool/trace                                    
+      78 +  events → text and trace appear incrementally → `run.completed
+         +` → agent turn + trace                                         
+      79 +  persist. This one test exercises client, repository, store, a
+         +nd UI together and is the                                      
+      80 +  merge gate for streaming changes.                            
+      81  
+      82  ## Fixtures
+      83  
+
+⏺ Let me sweep the whole spec for any remaining stale references to the old
+  contract:
+
+  Ran 1 shell command (ctrl+o to expand)
+⏺ The lines in 02/03/01 are intentional (they describe what's absent). The stale
+  ones needing fixes are in 04 and 05:
+
+⏺ Update(docs/spec/04-error-handling.md)
+  ⎿  Added 5 lines, removed 4 lines
+      30  | `Client` 4xx | no | surface; usually a contract bug — log lou
+          dly in debug |
+      31  | `Protocol` | no | surface + log payload snippet in debug buil
+          ds only |
+      32  
+      33 -Retries are owned by `SyncEngine`/`ConnectionManager` (backgrou
+         -nd refresh, streams) and                                       
+      34 -are invisible except through the status dot. **User-initiated a
+         -ctions never auto-retry**                                      
+      35 -(a send or pin either succeeds or shows a retry affordance) — s
+         -ilent replays of                                               
+      36 -user intent are how duplicate bookings happen. Idempotent repla
+         -ys use `client_id` (03).                                       
+      33 +Auto-retries apply only to connection-level probes (`Connection
+         +Manager`) and a run's event                                    
+      34 +stream reconnect (02) — invisible except through the status dot
+         +. **User-initiated actions                                     
+      35 +never auto-retry** (a send either succeeds or shows a retry aff
+         +ordance) — silent replays of                                   
+      36 +user intent are how duplicate work happens. Runs are not idempo
+         +tent server-side, so the app                                   
+      37 +guarantees no duplicates by only ever re-running on an explicit
+         + user retry (03).                                              
+      38  
+      39  ## Where errors surface (by design language)
+      40  
+
+⏺ Update(docs/spec/04-error-handling.md)
+  ⎿  Added 2 lines, removed 1 line
+      61  
+      62  **3. Failed send (2b)** — the optimistic user turn stays in the
+           log; its left border
+      63  switches to danger `#D06A6A`, meta line reads `▪ failed · retry
+           / discard` (retry accent,
+      64 -discard faint). Tapping retry re-sends with the same `client_id
+         -`.                                                             
+      64 +discard faint). Tapping retry starts a fresh run for the same m
+         +essage (03); discard removes                                   
+      65 +the pending user turn.                                         
+      66  
+      67  **4. Mid-stream failure (2b)** — a run's event stream that dies
+           keeps accumulated text,
+      68  appends a faint marker line `▪ stream interrupted · reconnectin
+          g…`, and the backoff
+
+⏺ Update(docs/spec/05-markdown-rendering.md)
+  ⎿  Added 2 lines, removed 2 lines
+       93    group; state derives from whether a later user turn referenc
+           es the group).
+       94  - **Collapsible**: same `▸/▾` muted-line pattern as traces; bo
+           dy is a surface-bg
+       95    `MarkdownBody`. Expansion state is UI-local (`rememberSaveab
+           le`), animates `riseIn`.
+       96 -- **TaskList / OptionTable**: pure display; live progress arri
+          -ves as `turn.delta`                                           
+       97 -  block updates during streaming and re-render.               
+       96 +- **TaskList / OptionTable**: pure display, parsed from the ag
+          +ent's markdown. During a live                                 
+       97 +  run they re-derive as `message.delta` text accumulates and t
+          +he markdown is re-parsed.                                     
+       98  
+       99  ## Thinking traces
+      100  
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ All remaining matches are intentional. Let me do one security courtesy check —
+  confirm the .env with the shared key is gitignored so it doesn't get
+  committed:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ No stale ConnState names remain. The specs are now consistent with the
+  verified gateway. Everything is done — here's what I found and changed.
+
+  The gateway is live and reachable — and quite different from the assumed 
+  contract
+
+  I probed https://api.gent.ino.ink with the shared HERMES_API_KEY from your
+  .env. Auth is exactly what you guessed: Authorization: Bearer <key> — a single
+  shared static token, no login round-trip. Two things worth flagging up front:
+
+  - Use the api. subdomain. The bare gent.ino.ink is a different service (a
+    cookie-SSO web UI) that redirects every API path to a login page and was
+    throwing intermittent 502s. api.gent.ino.ink returns clean JSON. The config
+    default server_url is now the api. origin.
+  - .env is gitignored — I verified, so the shared key won't get committed.
+
+  The big discovery: there is no server-side thread store
+
+  The gateway (version 0.18.0, model hermes-agent) is an OpenAI-compatible async
+  agent-run runner, not a conversation store. What actually exists:
+
+  ┌─────────────────────────────────┬───────────────────────────────────────┐
+  │            Endpoint             │             What it does              │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ GET /v1/health, /v1/models      │ probe + model list                    │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ POST /v1/runs                   │ starts an async run → 202 {run_id,    │
+  │                                 │ status:"started"}                     │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ GET /v1/runs/{id}               │ poll status/output/usage              │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ GET /v1/runs/{id}/events        │ SSE stream of the run                 │
+  ├─────────────────────────────────┼───────────────────────────────────────┤
+  │ POST /v1/chat/completions,      │ standard OpenAI, available but not    │
+  │ /v1/responses                   │ the primary path                      │
+  └─────────────────────────────────┴───────────────────────────────────────┘
+
+  There is no /v1/threads, no global event feed, no run-list, no /openapi.json.
+  I verified two behaviors that drove the redesign: input accepts a full
+  messages array and the agent correctly recalls earlier turns from it, but
+  session_id alone does not replay history. So conversation history is 
+  client-managed, and the app is the system of record for threads.
+
+  The run event stream uses a non-standard framing — data:-only frames with the
+  event type inside the JSON (message.delta, reasoning.available,
+  tool.started/tool.completed, run.completed), no id:/retry: lines. That means
+  no Last-Event-ID resume; instead a re-opened stream replays from the start
+  (which conveniently also lets an old thread lazily re-fetch its trace).
+
+  What I changed in the spec
+
+  - 02-server-api.md — rewrote from "assumed" to verified: real base URL/auth,
+    the run lifecycle, the exact event grammar with DTOs, the
+    client-managed-history finding, and a reconnect strategy built on replay + a
+    GET /v1/runs/{id} poll backstop (no heartbeat watchdog, since the server
+    sends no keepalive).
+  - 03-sync-and-cache.md — reframed Room from cache to system of record: no
+    reconcile/prune/server-wins logic; "running a turn" replaces "sync";
+    pins/read/delete are purely local; client-assigned seq.
+  - 01, 04, 05, 07, 08 — rippled the change through: RunController replaces
+    SyncEngine; the health-test caption now shows real platform · version (I'd
+    invented "protocol v2 · streaming ok"); traces are composed client-side from
+    reasoning + tool events; rich blocks are now a markdown post-processor (the
+    gateway returns only a markdown string, no typed blocks); the fake gateway
+    and tests target the real run API.
+  - README — added a verified "Gateway" section documenting the URL, auth, and
+    the app-owns-state model.
+  - Saved a project memory capturing the verified contract so it survives future
+    sessions.
+
+  One item still needs your input, since I couldn't verify it from the outside:
+  whether the agent emits any convention for interactive action buttons (the
+  option-table/booking-style buttons in the design mocks). The real output is
+  plain markdown, so until there's an agreed marker convention with the agent,
+  those render as prose/code/list/table blocks only. If Hermes has a way to
+  signal buttons, point me at it and I'll spec the parser against it.
+
+✻ Cooked for 13m 21s · done Wednesday, Jul 15 at 9:14 AM
+
+❯ Let's commit the updates to the spec.                                         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ All 8 changes are the spec docs. We're on main (the default branch), so I'll
+  branch first per good practice, then commit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Committed on branch spec/verified-gateway-contract (commit 491b5f2) — all 8
+  spec files, no unrelated changes.
+
+  I branched off main rather than committing to it directly. To bring it into
+  main:
+
+  git checkout main && git merge spec/verified-gateway-contract
+
+  Or push and open a PR if you'd rather review the diff first. Want me to do
+  either?
+
+✻ Crunched for 27s · done Wednesday, Jul 15 at 9:15 AM
+
+❯ Merge to main                                                                 
+
+  Merged spec/verified-gateway-contract (ctrl+o to expand)
+
+⏺ Merged into main (fast-forward, commit 491b5f2). Let me delete the now-merged
+  branch.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Done. The spec updates are on main (commit 491b5f2), and the merged branch is
+  cleaned up.
+
+  main is now 2 commits ahead of origin/main — say the word if you want me to
+  push.
+
+✻ Worked for 17s · done Wednesday, Jul 15 at 9:16 AM
